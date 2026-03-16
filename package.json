@@ -1,0 +1,16 @@
+{
+  "name": "a2a-langchain-mcp",
+  "private": true,
+  "workspaces": [
+    "a2a-server",
+    "mcp-server"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:a2a\" \"npm run dev:mcp\"",
+    "dev:a2a": "npm run dev -w a2a-server",
+    "dev:mcp": "npm run dev -w mcp-server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
