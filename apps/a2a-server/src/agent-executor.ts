@@ -88,7 +88,7 @@ class TaskSession {
       { messages: [{ role: "human", content: input }] },
       {
         configurable: { thread_id: this.context.contextId },
-        streamMode: ["updates", "messages"],
+        streamMode: ["messages", "updates"],
         signal: this.signal,
       },
     );
@@ -106,39 +106,64 @@ class TaskSession {
     this.finalizeResponse();
   }
 
+  /**
+   * handleMessageChunk processes token-by-token message increments.
+   * payload is [messageChunk, metadata]
+   */
   private handleMessageChunk(payload: any) {
     const [msgChunk, metadata] = payload;
+
+    // Only stream content from the "agent" node to the user.
     if (metadata.langgraph_node === "agent" && msgChunk.content) {
       this.responseText += msgChunk.content;
-      this.publishArtifact(this.responseArtifactId, "response", [{ kind: "text", text: msgChunk.content }]);
+      this.publishArtifact(this.responseArtifactId, "response", [
+        { kind: "text", text: msgChunk.content },
+      ]);
     }
   }
 
+  /**
+   * handleStepUpdate processes full node outputs (steps).
+   * payload is { [nodeName]: { messages: [...] } }
+   */
   private handleStepUpdate(payload: any) {
-    const [step, update] = Object.entries(payload)[0] as [string, any];
+    const nodeName = Object.keys(payload)[0];
+    const update = payload[nodeName];
     const messages = update.messages ?? [];
     const lastMsg = messages[messages.length - 1];
 
-    if (step !== "tools" && lastMsg) {
-      if (lastMsg.tool_calls?.length) {
-        for (const tc of lastMsg.tool_calls) {
-          const query = typeof tc.args?.query === "string" ? tc.args.query : JSON.stringify(tc.args);
-          this.toolQueryMap.set(tc.id, { name: tc.name, query });
-          console.log(`[Tool Call] ${tc.name} executing:`, query);
-          this.publishArtifact(tc.id, "tool-call", [{ kind: "data", data: { phase: "running", toolName: tc.name, query } }]);
-        }
+    if (!lastMsg) return;
+
+    // 1. Tool Call Initialization
+    if (nodeName === "agent" && lastMsg.tool_calls?.length > 0) {
+      for (const tc of lastMsg.tool_calls) {
+        const query =
+          typeof tc.args?.query === "string"
+            ? tc.args.query
+            : JSON.stringify(tc.args);
+        this.toolQueryMap.set(tc.id, { name: tc.name, query });
+        console.log(`[executor] Tool execution started: ${tc.name}`);
+        this.publishArtifact(tc.id, "tool-call", [
+          {
+            kind: "data",
+            data: { phase: "running", toolName: tc.name, query },
+          },
+        ]);
       }
-      if (lastMsg.usage_metadata) {
-        this.usageMetadata = lastMsg.usage_metadata;
-      }
-    } else if (step === "tools") {
+    }
+
+    // 2. Tool Result Collection
+    if (nodeName === "tools") {
       for (const msg of messages) {
         if (!msg.tool_call_id) continue;
-        const tool = this.toolQueryMap.get(msg.tool_call_id) ?? { name: "unknown", query: "" };
+        const tool = this.toolQueryMap.get(msg.tool_call_id) ?? {
+          name: "unknown",
+          query: "",
+        };
         this.toolQueryMap.delete(msg.tool_call_id);
 
         const rawContent = String(msg.content || "");
-        console.log(`[Tool Result] ${tool.name}:`, rawContent.substring(0, 100) + "...");
+        console.log(`[executor] Tool execution finished: ${tool.name}`);
 
         let resultCount = 0;
         try {
@@ -146,8 +171,28 @@ class TaskSession {
           resultCount = (Array.isArray(parsed) ? parsed : (parsed.results || [])).length || 0;
         } catch {}
 
-        this.publishArtifact(msg.tool_call_id, "tool-call", [{ kind: "data", data: { phase: "done", toolName: tool.name, query: tool.query, resultCount } }], true);
+        this.publishArtifact(
+          msg.tool_call_id,
+          "tool-call",
+          [
+            {
+              kind: "data",
+              data: {
+                phase: "done",
+                toolName: tool.name,
+                query: tool.query,
+                resultCount,
+              },
+            },
+          ],
+          true,
+        );
       }
+    }
+
+    // 3. Global Usage Metadata (usually comes from the LLM after finishing)
+    if (lastMsg.usage_metadata) {
+      this.usageMetadata = lastMsg.usage_metadata;
     }
   }
 
@@ -155,7 +200,14 @@ class TaskSession {
     this.publishArtifact(
       this.responseArtifactId,
       "response",
-      [{ kind: "text", text: this.responseText || "The agent completed the task without returning text." }],
+      [
+        {
+          kind: "text",
+          text:
+            this.responseText ||
+            "The agent completed the task without returning text.",
+        },
+      ],
       true,
       this.usageMetadata ? { usage: this.usageMetadata } : undefined,
     );

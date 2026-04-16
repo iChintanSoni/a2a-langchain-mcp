@@ -68,7 +68,7 @@ export async function buildAgent(mcpClient: MultiServerMCPClient) {
   }
 
   return createAgent({
-    model: "ollama:qwen3:4b",
+    model: ENV.AGENT_MODEL,
     systemPrompt,
     tools,
     checkpointer,
