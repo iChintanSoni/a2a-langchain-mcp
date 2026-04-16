@@ -1,0 +1,18 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: a2a-cluster
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # a2a-server HTTP  → localhost:4000
+      - containerPort: 30001
+        hostPort: 4000
+        protocol: TCP
+      # a2a-server gRPC  → localhost:4001
+      - containerPort: 30002
+        hostPort: 4001
+        protocol: TCP
+      # mcp-server  → localhost:5000
+      - containerPort: 30003
+        hostPort: 5000
+        protocol: TCP

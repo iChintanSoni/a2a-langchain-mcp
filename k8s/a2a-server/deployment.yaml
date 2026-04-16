@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: a2a-server
+  namespace: a2a-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: a2a-server
+  template:
+    metadata:
+      labels:
+        app: a2a-server
+    spec:
+      containers:
+        - name: a2a-server
+          image: a2a-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4000
+            - name: grpc
+              containerPort: 4001
+          envFrom:
+            - configMapRef:
+                name: a2a-server-config
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /a2a/card
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /a2a/card
+              port: 4000
+            initialDelaySeconds: 20
+            periodSeconds: 20
