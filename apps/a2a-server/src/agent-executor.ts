@@ -110,11 +110,16 @@ async function streamAgentResponse(
   contextId: string,
   taskId: string,
   eventBus: ExecutionEventBus,
+  responseArtifactId: string,
   signal?: AbortSignal,
 ) {
   const stream = await agentInstance.stream(
     { messages: [{ role: "human", content }] },
-    { configurable: { thread_id: contextId }, streamMode: "updates", signal },
+    {
+      configurable: { thread_id: contextId },
+      streamMode: ["updates", "messages"],
+      signal,
+    },
   );
 
   const toolQueryMap = new Map<string, { toolName: string; query: string }>();
@@ -122,74 +127,96 @@ async function streamAgentResponse(
   let usageMetadata: Record<string, unknown> | undefined;
 
   for await (const chunk of stream) {
-    const [step, update] = Object.entries(chunk)[0] as unknown as [
-      string,
-      StepUpdate,
-    ];
-    const messages = update.messages ?? [];
-    const lastMsg = messages[messages.length - 1];
+    const [mode, payload] = chunk as [string, any];
 
-    if (step !== "tools" && lastMsg) {
-      if (lastMsg.tool_calls?.length) {
-        for (const tc of lastMsg.tool_calls) {
-          const query =
-            typeof tc.args?.query === "string"
-              ? tc.args.query
-              : JSON.stringify(tc.args);
-          toolQueryMap.set(tc.id, { toolName: tc.name, query });
-          console.log(`[Tool Call] ${tc.name} executing with args:`, query);
+    if (mode === "messages") {
+      const [msgChunk, metadata] = payload;
+      if (
+        metadata.langgraph_node === "agent" &&
+        typeof msgChunk.content === "string" &&
+        msgChunk.content.length > 0
+      ) {
+        responseText += msgChunk.content;
+        eventBus.publish({
+          kind: "artifact-update",
+          taskId,
+          contextId,
+          append: true,
+          lastChunk: false,
+          artifact: {
+            artifactId: responseArtifactId,
+            name: "response",
+            parts: [{ kind: "text", text: msgChunk.content }],
+          },
+        });
+      }
+    } else if (mode === "updates") {
+      const [step, update] = Object.entries(payload)[0] as unknown as [
+        string,
+        StepUpdate,
+      ];
+      const messages = update.messages ?? [];
+      const lastMsg = messages[messages.length - 1];
+
+      if (step !== "tools" && lastMsg) {
+        if (lastMsg.tool_calls?.length) {
+          for (const tc of lastMsg.tool_calls) {
+            const query =
+              typeof tc.args?.query === "string"
+                ? tc.args.query
+                : JSON.stringify(tc.args);
+            toolQueryMap.set(tc.id, { toolName: tc.name, query });
+            console.log(`[Tool Call] ${tc.name} executing with args:`, query);
+            publishToolCallEvent(eventBus, {
+              taskId,
+              contextId,
+              artifactId: tc.id,
+              phase: "running",
+              toolName: tc.name,
+              query,
+            });
+          }
+        }
+
+        if (lastMsg.usage_metadata) {
+          usageMetadata = lastMsg.usage_metadata;
+          console.log(`[Observatory - Token Usage]`, lastMsg.usage_metadata);
+        }
+      } else if (step === "tools") {
+        for (const msg of messages) {
+          if (!msg.tool_call_id) continue;
+          const { toolName: resolvedToolName, query } = toolQueryMap.get(
+            msg.tool_call_id,
+          ) ?? {
+            toolName: "unknown",
+            query: "",
+          };
+          toolQueryMap.delete(msg.tool_call_id);
+
+          const rawContent = typeof msg.content === "string" ? msg.content : "";
+          console.log(
+            `[Tool Result] ${resolvedToolName}:`,
+            rawContent.substring(0, 200) + (rawContent.length > 200 ? "..." : ""),
+          );
+
+          let resultCount = 0;
+          try {
+            const parsed = JSON.parse(rawContent) as Record<string, unknown>;
+            const results = Array.isArray(parsed) ? parsed : parsed.results;
+            resultCount = Array.isArray(results) ? results.length : 0;
+          } catch {
+            // non-JSON content
+          }
           publishToolCallEvent(eventBus, {
             taskId,
             contextId,
-            artifactId: tc.id,
-            phase: "running",
-            toolName: tc.name,
+            artifactId: msg.tool_call_id,
+            phase: "done",
+            toolName: resolvedToolName,
             query,
+            resultCount,
           });
         }
-      } else {
-        const text = contentToText(lastMsg.content);
-        if (text) responseText = text;
-      }
-
-      if (lastMsg.usage_metadata) {
-        usageMetadata = lastMsg.usage_metadata;
-        console.log(`[Observatory - Token Usage]`, lastMsg.usage_metadata);
-      }
-    } else if (step === "tools") {
-      for (const msg of messages) {
-        if (!msg.tool_call_id) continue;
-        const { toolName: resolvedToolName, query } = toolQueryMap.get(
-          msg.tool_call_id,
-        ) ?? {
-          toolName: "unknown",
-          query: "",
-        };
-        toolQueryMap.delete(msg.tool_call_id);
-
-        const rawContent = typeof msg.content === "string" ? msg.content : "";
-        console.log(
-          `[Tool Result] ${resolvedToolName}:`,
-          rawContent.substring(0, 200) + (rawContent.length > 200 ? "..." : ""),
-        );
-
-        let resultCount = 0;
-        try {
-          const parsed = JSON.parse(rawContent) as Record<string, unknown>;
-          const results = Array.isArray(parsed) ? parsed : parsed.results;
-          resultCount = Array.isArray(results) ? results.length : 0;
-        } catch {
-          // non-JSON content
-        }
-        publishToolCallEvent(eventBus, {
-          taskId,
-          contextId,
-          artifactId: msg.tool_call_id,
-          phase: "done",
-          toolName: resolvedToolName,
-          query,
-          resultCount,
-        });
       }
     }
   }
@@ -252,12 +279,15 @@ class ChatAgentExecutor implements AgentExecutor {
     }
 
     try {
+      const responseArtifactId = crypto.randomUUID();
+
       const result = await streamAgentResponse(
         agent,
         formattedInput,
         contextId,
         taskId,
         eventBus,
+        responseArtifactId,
         abortController.signal,
       );
 
@@ -275,7 +305,7 @@ class ChatAgentExecutor implements AgentExecutor {
         append: false,
         lastChunk: true,
         artifact: {
-          artifactId: crypto.randomUUID(),
+          artifactId: responseArtifactId,
           name: "response",
           description: "Agent response",
           parts: [{ kind: "text", text: responseText }],
