@@ -19,6 +19,12 @@ import { ENV } from "#src/env.ts";
 
 export function startHttpServer(requestHandler: DefaultRequestHandler): void {
   const app = express();
+  app.use(express.json());
+
+  // Health check endpoint
+  app.get("/health", (req, res) => {
+    res.status(200).send("OK");
+  });
 
   app.use(
     `/${AGENT_CARD_PATH}`,

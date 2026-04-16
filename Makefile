@@ -20,7 +20,7 @@ IMAGES := mcp-server a2a-server
 # Podman is used as the container engine; tell kind to use it.
 export KIND_EXPERIMENTAL_PROVIDER := podman
 
-.PHONY: all build cluster-create load deploy wait delete clean help logs-mcp logs-a2a logs-ui status
+.PHONY: all build cluster-create load deploy wait delete clean help logs-mcp logs-a2a logs-ui status machine-reset machine-status
 
 # ── Top-level targets ─────────────────────────────────────────────────────────
 
@@ -93,6 +93,17 @@ logs-a2a:
 ## status: Show pod status
 status:
 	kubectl get pods -n $(NAMESPACE)
+
+## machine-reset: [CAUTION] Deletes and recreates the podman machine with performance settings (8GB Mac)
+machine-reset:
+	podman machine stop || true
+	podman machine rm -f || true
+	podman machine init --cpus 4 --memory 4096 --disk-size 50
+	podman machine start
+
+## machine-status: Inspect the podman machine resources
+machine-status:
+	podman machine inspect
 
 ## help: Show this help message
 help:

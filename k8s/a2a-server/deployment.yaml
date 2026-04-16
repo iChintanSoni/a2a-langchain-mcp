@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: a2a-server
-          image: a2a-server:latest
+          image: localhost/a2a-server:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -34,13 +34,13 @@ spec:
               cpu: "1000m"
           readinessProbe:
             httpGet:
-              path: /a2a/card
+              path: /health
               port: 4000
             initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /a2a/card
+              path: /health
               port: 4000
             initialDelaySeconds: 20
             periodSeconds: 20
