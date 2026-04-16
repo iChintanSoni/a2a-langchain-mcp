@@ -43,7 +43,7 @@ make all
 Once deployment completes, the services are surfaced over the following endpoints:
 - **A2A Server**: `http://localhost:4000`
 - **A2A gRPC**: `localhost:4001`
-- **MCP Server**: `http://localhost:5000`
+- **MCP Server**: `http://localhost:5050`
 - **Ollama Engine**: `http://localhost:11434`
 
 ### Helpful Commands

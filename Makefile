@@ -30,7 +30,7 @@ all: build cluster-create load deploy
 	@echo "✅  Deployment complete. Access points:"
 	@echo "    A2A Server → http://localhost:4000"
 	@echo "    A2A gRPC   → localhost:4001"
-	@echo "    MCP Server → http://localhost:5000"
+	@echo "    MCP Server → http://localhost:5050"
 	@echo "    Ollama     → http://localhost:11434  (host machine)"
 
 ## build: Build all container images with Podman

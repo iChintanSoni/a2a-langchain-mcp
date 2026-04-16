@@ -7,7 +7,7 @@ const envSchema = z.object({
   PORT: z.string().transform(Number).default(4000),
   GRPC_PORT: z.string().transform(Number).default(4001),
   MCP_SERVER_HOST: z.string(),
-  MCP_SERVER_PORT: z.string().transform(Number).default(5000),
+  MCP_SERVER_PORT: z.string().transform(Number).default(5050),
   REDIS_URL: z.string().default("redis://localhost:6379"),
 });
 

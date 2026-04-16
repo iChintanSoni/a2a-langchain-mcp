@@ -12,7 +12,7 @@ nodes:
       - containerPort: 30002
         hostPort: 4001
         protocol: TCP
-      # mcp-server  → localhost:5000
+      # mcp-server  → localhost:5050
       - containerPort: 30003
-        hostPort: 5000
+        hostPort: 5050
         protocol: TCP

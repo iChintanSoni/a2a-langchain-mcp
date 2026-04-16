@@ -19,7 +19,7 @@ spec:
           # Use IfNotPresent so locally-loaded kind images are not re-pulled
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 5000
+            - containerPort: 5050
           envFrom:
             - configMapRef:
                 name: mcp-server-config
@@ -32,13 +32,13 @@ spec:
               cpu: "500m"
           readinessProbe:
             httpGet:
-              path: /mcp
-              port: 5000
+              path: /health
+              port: 5050
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /mcp
-              port: 5000
+              path: /health
+              port: 5050
             initialDelaySeconds: 15
             periodSeconds: 20

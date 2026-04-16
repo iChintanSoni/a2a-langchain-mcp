@@ -20,6 +20,11 @@ import { createMcpServer } from "#src/mcp-server.ts";
 const app = express();
 app.use(express.json());
 
+// Readiness/Liveness probe endpoint
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
+});
+
 // In-memory session store: sessionId → active transport
 const sessions = new Map<string, StreamableHTTPServerTransport>();
 

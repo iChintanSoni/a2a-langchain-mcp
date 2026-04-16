@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const envSchema = z.object({
   HOST: z.string(),
-  PORT: z.string().transform(Number).default(5000),
+  PORT: z.string().transform(Number).default(5050),
 });
 
 try {
