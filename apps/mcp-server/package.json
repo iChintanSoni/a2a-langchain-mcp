@@ -1,0 +1,25 @@
+{
+  "name": "mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for personal assistant agent",
+  "scripts": {
+    "dev": "node --experimental-transform-types --watch-path=./src --env-file=.env src/index.ts",
+    "prod": "node --experimental-transform-types src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "express": "^5.2.1",
+    "zod": "^4.3.6"
+  },
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
+  }
+}

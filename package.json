@@ -1,16 +1,28 @@
 {
   "name": "a2a-langchain-mcp",
-  "private": true,
-  "workspaces": [
-    "a2a-server",
-    "mcp-server"
-  ],
+  "version": "1.0.0",
+  "description": "",
   "scripts": {
-    "dev": "concurrently \"npm run dev:a2a\" \"npm run dev:mcp\"",
-    "dev:a2a": "npm run dev -w a2a-server",
-    "dev:mcp": "npm run dev -w mcp-server"
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iChintanSoni/a2a-langchain-mcp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/iChintanSoni/a2a-langchain-mcp/issues"
+  },
+  "homepage": "https://github.com/iChintanSoni/a2a-langchain-mcp#readme",
+  "workspaces": [
+    "apps/a2a-server",
+    "apps/mcp-server"
+  ],
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "prettier": "^3.8.1"
   }
 }
