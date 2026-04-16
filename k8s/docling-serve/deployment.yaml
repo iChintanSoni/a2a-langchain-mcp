@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docling-serve
+  namespace: a2a-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docling-serve
+  template:
+    metadata:
+      labels:
+        app: docling-serve
+    spec:
+      containers:
+        - name: docling-serve
+          image: quay.io/docling-project/docling-serve
+          ports:
+            - containerPort: 5001
+          envFrom:
+            - configMapRef:
+                name: docling-serve-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docling-serve
+  namespace: a2a-system
+spec:
+  type: NodePort
+  ports:
+    - port: 5001
+      targetPort: 5001
+      nodePort: 30004
+  selector:
+    app: docling-serve

@@ -9,6 +9,7 @@ const envSchema = z.object({
   MCP_SERVER_HOST: z.string(),
   MCP_SERVER_PORT: z.string().transform(Number).default(5050),
   REDIS_URL: z.string().default("redis://localhost:6379"),
+  DOCLING_SERVE_URL: z.string().optional(),
 });
 
 try {

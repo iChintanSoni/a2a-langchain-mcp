@@ -4,10 +4,10 @@
  * Responsibilities:
  *  1. Publish A2A task lifecycle events (submitted → working → completed/failed/canceled)
  *  2. Stream agent responses token-by-token via artifact-update events
- *  3. Notify the client when tool calls are in flight (status-update)
+ *  3. Notify the client when tool calls are in flight
  *  4. Support task cancellation via AbortController
  *
- * Agent creation and memory live in agent.ts; this file focuses on protocol glue.
+ * This file focuses on protocol "glue". Agent creation and memory live in agent.ts.
  */
 
 import {
@@ -16,44 +16,16 @@ import {
   type RequestContext,
 } from "@a2a-js/sdk/server";
 import { type MultiServerMCPClient } from "@langchain/mcp-adapters";
-import { type Task, type Part } from "@a2a-js/sdk";
+import { type Task } from "@a2a-js/sdk";
 import { buildAgent } from "#src/agent.ts";
+import { getFileParts, getUserInput } from "#src/util.ts";
+import { loadDocumentContent } from "#src/file-loader.ts";
 import { getMCPPrompt } from "#src/mcp-client.ts";
-import { getUserInput } from "#src/util.ts";
+import crypto from "node:crypto";
 
 type Agent = Awaited<ReturnType<typeof buildAgent>>;
 
-type ToolCall = { id: string; name: string; args: Record<string, unknown> };
-type StepUpdate = {
-  messages: Array<{
-    content: unknown;
-    tool_calls?: ToolCall[];
-    tool_call_id?: string;
-    usage_metadata?: Record<string, unknown>;
-  }>;
-};
-
-function contentToText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-
-  return content
-    .map((block) => {
-      if (typeof block === "string") return block;
-      if (
-        block &&
-        typeof block === "object" &&
-        "type" in block &&
-        block.type === "text" &&
-        "text" in block &&
-        typeof block.text === "string"
-      ) {
-        return block.text;
-      }
-      return "";
-    })
-    .join("");
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function isAbortError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -64,165 +36,133 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-function publishToolCallEvent(
-  eventBus: ExecutionEventBus,
-  params: {
-    taskId: string;
-    contextId: string;
-    artifactId: string;
-    phase: "running" | "done" | "error";
-    toolName: string;
-    query: string;
-    resultCount?: number;
-    error?: string;
-  },
-) {
-  eventBus.publish({
-    kind: "artifact-update",
-    taskId: params.taskId,
-    contextId: params.contextId,
-    append: false,
-    lastChunk: params.phase !== "running",
-    artifact: {
-      artifactId: params.artifactId,
-      name: "tool-call",
-      parts: [
-        {
-          kind: "data",
-          data: {
-            phase: params.phase,
-            toolName: params.toolName,
-            query: params.query,
-            ...(params.resultCount != null
-              ? { resultCount: params.resultCount }
-              : {}),
-            ...(params.error ? { error: params.error } : {}),
-          },
-        },
-      ],
-    },
-  });
-}
+// ─── TaskSession ─────────────────────────────────────────────────────────────
 
-async function streamAgentResponse(
-  agentInstance: Agent,
-  content: string,
-  contextId: string,
-  taskId: string,
-  eventBus: ExecutionEventBus,
-  responseArtifactId: string,
-  signal?: AbortSignal,
-) {
-  const stream = await agentInstance.stream(
-    { messages: [{ role: "human", content }] },
-    {
-      configurable: { thread_id: contextId },
-      streamMode: ["updates", "messages"],
-      signal,
-    },
-  );
+/**
+ * Manages the state and protocol events for a single task execution.
+ */
+class TaskSession {
+  private readonly toolQueryMap = new Map<string, { name: string; query: string }>();
+  private responseText = "";
+  private usageMetadata: any;
 
-  const toolQueryMap = new Map<string, { toolName: string; query: string }>();
-  let responseText = "";
-  let usageMetadata: Record<string, unknown> | undefined;
+  constructor(
+    private readonly context: RequestContext,
+    private readonly eventBus: ExecutionEventBus,
+    private readonly signal: AbortSignal,
+    private readonly responseArtifactId = crypto.randomUUID(),
+  ) {}
 
-  for await (const chunk of stream) {
-    const [mode, payload] = chunk as [string, any];
+  publishStatus(state: "working" | "completed" | "failed" | "canceled", final = false, error?: unknown) {
+    const status: any = { state, timestamp: new Date().toISOString() };
+    if (error) {
+      status.message = {
+        kind: "message",
+        messageId: crypto.randomUUID(),
+        role: "agent",
+        parts: [{ kind: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+      };
+    }
+    this.eventBus.publish({
+      kind: "status-update",
+      taskId: this.context.taskId,
+      contextId: this.context.contextId,
+      status,
+      final,
+    });
+  }
 
-    if (mode === "messages") {
-      const [msgChunk, metadata] = payload;
-      if (
-        metadata.langgraph_node === "agent" &&
-        typeof msgChunk.content === "string" &&
-        msgChunk.content.length > 0
-      ) {
-        responseText += msgChunk.content;
-        eventBus.publish({
-          kind: "artifact-update",
-          taskId,
-          contextId,
-          append: true,
-          lastChunk: false,
-          artifact: {
-            artifactId: responseArtifactId,
-            name: "response",
-            parts: [{ kind: "text", text: msgChunk.content }],
-          },
-        });
+  private publishArtifact(artifactId: string, name: string, parts: any[], lastChunk = false, metadata?: any) {
+    this.eventBus.publish({
+      kind: "artifact-update",
+      taskId: this.context.taskId,
+      contextId: this.context.contextId,
+      append: !lastChunk,
+      lastChunk,
+      artifact: { artifactId, name, parts, metadata },
+    });
+  }
+
+  async run(agent: Agent, input: string) {
+    const stream = await agent.stream(
+      { messages: [{ role: "human", content: input }] },
+      {
+        configurable: { thread_id: this.context.contextId },
+        streamMode: ["updates", "messages"],
+        signal: this.signal,
+      },
+    );
+
+    for await (const chunk of stream) {
+      const [mode, payload] = chunk as [string, any];
+
+      if (mode === "messages") {
+        this.handleMessageChunk(payload);
+      } else if (mode === "updates") {
+        this.handleStepUpdate(payload);
       }
-    } else if (mode === "updates") {
-      const [step, update] = Object.entries(payload)[0] as unknown as [
-        string,
-        StepUpdate,
-      ];
-      const messages = update.messages ?? [];
-      const lastMsg = messages[messages.length - 1];
+    }
 
-      if (step !== "tools" && lastMsg) {
-        if (lastMsg.tool_calls?.length) {
-          for (const tc of lastMsg.tool_calls) {
-            const query =
-              typeof tc.args?.query === "string"
-                ? tc.args.query
-                : JSON.stringify(tc.args);
-            toolQueryMap.set(tc.id, { toolName: tc.name, query });
-            console.log(`[Tool Call] ${tc.name} executing with args:`, query);
-            publishToolCallEvent(eventBus, {
-              taskId,
-              contextId,
-              artifactId: tc.id,
-              phase: "running",
-              toolName: tc.name,
-              query,
-            });
-          }
+    this.finalizeResponse();
+  }
+
+  private handleMessageChunk(payload: any) {
+    const [msgChunk, metadata] = payload;
+    if (metadata.langgraph_node === "agent" && msgChunk.content) {
+      this.responseText += msgChunk.content;
+      this.publishArtifact(this.responseArtifactId, "response", [{ kind: "text", text: msgChunk.content }]);
+    }
+  }
+
+  private handleStepUpdate(payload: any) {
+    const [step, update] = Object.entries(payload)[0] as [string, any];
+    const messages = update.messages ?? [];
+    const lastMsg = messages[messages.length - 1];
+
+    if (step !== "tools" && lastMsg) {
+      if (lastMsg.tool_calls?.length) {
+        for (const tc of lastMsg.tool_calls) {
+          const query = typeof tc.args?.query === "string" ? tc.args.query : JSON.stringify(tc.args);
+          this.toolQueryMap.set(tc.id, { name: tc.name, query });
+          console.log(`[Tool Call] ${tc.name} executing:`, query);
+          this.publishArtifact(tc.id, "tool-call", [{ kind: "data", data: { phase: "running", toolName: tc.name, query } }]);
         }
+      }
+      if (lastMsg.usage_metadata) {
+        this.usageMetadata = lastMsg.usage_metadata;
+      }
+    } else if (step === "tools") {
+      for (const msg of messages) {
+        if (!msg.tool_call_id) continue;
+        const tool = this.toolQueryMap.get(msg.tool_call_id) ?? { name: "unknown", query: "" };
+        this.toolQueryMap.delete(msg.tool_call_id);
 
-        if (lastMsg.usage_metadata) {
-          usageMetadata = lastMsg.usage_metadata;
-          console.log(`[Observatory - Token Usage]`, lastMsg.usage_metadata);
-        }
-      } else if (step === "tools") {
-        for (const msg of messages) {
-          if (!msg.tool_call_id) continue;
-          const { toolName: resolvedToolName, query } = toolQueryMap.get(
-            msg.tool_call_id,
-          ) ?? {
-            toolName: "unknown",
-            query: "",
-          };
-          toolQueryMap.delete(msg.tool_call_id);
+        const rawContent = String(msg.content || "");
+        console.log(`[Tool Result] ${tool.name}:`, rawContent.substring(0, 100) + "...");
 
-          const rawContent = typeof msg.content === "string" ? msg.content : "";
-          console.log(
-            `[Tool Result] ${resolvedToolName}:`,
-            rawContent.substring(0, 200) + (rawContent.length > 200 ? "..." : ""),
-          );
+        let resultCount = 0;
+        try {
+          const parsed = JSON.parse(rawContent);
+          resultCount = (Array.isArray(parsed) ? parsed : (parsed.results || [])).length || 0;
+        } catch {}
 
-          let resultCount = 0;
-          try {
-            const parsed = JSON.parse(rawContent) as Record<string, unknown>;
-            const results = Array.isArray(parsed) ? parsed : parsed.results;
-            resultCount = Array.isArray(results) ? results.length : 0;
-          } catch {
-            // non-JSON content
-          }
-          publishToolCallEvent(eventBus, {
-            taskId,
-            contextId,
-            artifactId: msg.tool_call_id,
-            phase: "done",
-            toolName: resolvedToolName,
-            query,
-            resultCount,
-          });
-        }
+        this.publishArtifact(msg.tool_call_id, "tool-call", [{ kind: "data", data: { phase: "done", toolName: tool.name, query: tool.query, resultCount } }], true);
       }
     }
   }
 
-  return { responseText, usageMetadata };
+  private finalizeResponse() {
+    this.publishArtifact(
+      this.responseArtifactId,
+      "response",
+      [{ kind: "text", text: this.responseText || "The agent completed the task without returning text." }],
+      true,
+      this.usageMetadata ? { usage: this.usageMetadata } : undefined,
+    );
+  }
 }
+
+// ─── ChatAgentExecutor ────────────────────────────────────────────────────────
 
 class ChatAgentExecutor implements AgentExecutor {
   private agent: Agent | undefined;
@@ -230,127 +170,50 @@ class ChatAgentExecutor implements AgentExecutor {
 
   constructor(private readonly mcpClient: MultiServerMCPClient) {}
 
-  private async getAgent(): Promise<Agent> {
-    if (!this.agent) {
-      this.agent = await buildAgent(this.mcpClient);
-    }
+  private async getAgent() {
+    if (!this.agent) this.agent = await buildAgent(this.mcpClient);
     return this.agent;
   }
 
-  async execute(
-    requestContext: RequestContext,
-    eventBus: ExecutionEventBus,
-  ): Promise<void> {
+  async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
     const { taskId, contextId, userMessage, task } = requestContext;
 
+    // 1. Ensure task exists and transition to "working"
     if (!task) {
-      const newTask: Task = {
+      eventBus.publish({
         kind: "task",
         id: taskId,
         contextId,
         status: { state: "submitted", timestamp: new Date().toISOString() },
         history: [userMessage],
-      };
-      eventBus.publish(newTask);
+      } as Task);
     }
 
-    eventBus.publish({
-      kind: "status-update",
-      taskId,
-      contextId,
-      status: { state: "working", timestamp: new Date().toISOString() },
-      final: false,
-    });
-
-    const textInput = getUserInput(requestContext);
-    if (!textInput) throw new Error("No text input in request");
-
-    const agent = await this.getAgent();
     const abortController = new AbortController();
     this.abortControllers.set(taskId, abortController);
+    const session = new TaskSession(requestContext, eventBus, abortController.signal);
 
-    let formattedInput = textInput;
-    try {
-      formattedInput = await getMCPPrompt("personal_assistant", {
-        user_question: textInput,
-      });
-    } catch {
-      // Non-fatal
-    }
+    session.publishStatus("working");
 
     try {
-      const responseArtifactId = crypto.randomUUID();
-
-      const result = await streamAgentResponse(
-        agent,
-        formattedInput,
-        contextId,
-        taskId,
-        eventBus,
-        responseArtifactId,
-        abortController.signal,
-      );
-
-      let responseText = result.responseText;
-      const { usageMetadata } = result;
-
-      if (!responseText) {
-        responseText = "The agent completed the task without returning text.";
+      // 2. Prepare Input (resolve files -> format via MCP prompt)
+      let input = await this.prepareInput(requestContext);
+      try {
+        input = await getMCPPrompt("personal_assistant", { user_question: input });
+      } catch (err) {
+        console.warn("[executor] MCP prompt failed, using raw input", err);
       }
 
-      eventBus.publish({
-        kind: "artifact-update",
-        taskId,
-        contextId,
-        append: false,
-        lastChunk: true,
-        artifact: {
-          artifactId: responseArtifactId,
-          name: "response",
-          description: "Agent response",
-          parts: [{ kind: "text", text: responseText }],
-          metadata: usageMetadata ? { usage: usageMetadata } : undefined,
-        },
-      });
+      // 3. Run Agent
+      const agent = await this.getAgent();
+      await session.run(agent, input);
 
-      eventBus.publish({
-        kind: "status-update",
-        taskId,
-        contextId,
-        status: { state: "completed", timestamp: new Date().toISOString() },
-        final: true,
-      });
+      session.publishStatus("completed", true);
     } catch (error) {
       if (abortController.signal.aborted || isAbortError(error)) {
-        eventBus.publish({
-          kind: "status-update",
-          taskId,
-          contextId,
-          status: { state: "canceled", timestamp: new Date().toISOString() },
-          final: true,
-        });
+        session.publishStatus("canceled", true);
       } else {
-        eventBus.publish({
-          kind: "status-update",
-          taskId,
-          contextId,
-          status: {
-            state: "failed",
-            timestamp: new Date().toISOString(),
-            message: {
-              kind: "message",
-              messageId: crypto.randomUUID(),
-              role: "agent",
-              parts: [
-                {
-                  kind: "text",
-                  text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-                },
-              ],
-            },
-          },
-          final: true,
-        });
+        session.publishStatus("failed", true, error);
         throw error;
       }
     } finally {
@@ -358,10 +221,26 @@ class ChatAgentExecutor implements AgentExecutor {
     }
   }
 
-  cancelTask = async (
-    taskId: string,
-    _eventBus: ExecutionEventBus,
-  ): Promise<void> => {
+  private async prepareInput(requestContext: RequestContext): Promise<string> {
+    const textInput = getUserInput(requestContext);
+    const fileParts = getFileParts(requestContext);
+
+    if (fileParts.length === 0) return textInput;
+
+    console.log(`[executor] Loading ${fileParts.length} files...`);
+    const contents = await Promise.all(fileParts.map(async (part) => {
+      try {
+        const [name, , content] = await loadDocumentContent(part);
+        return `--- FILE: ${name} ---\n${content}\n--- END FILE ---`;
+      } catch (err) {
+        return `--- ERROR LOADING FILE: ${part.file.name} ---`;
+      }
+    }));
+
+    return `${textInput}\n\nAttached Files:\n${contents.join("\n\n")}`;
+  }
+
+  cancelTask = async (taskId: string) => {
     this.abortControllers.get(taskId)?.abort();
   };
 }

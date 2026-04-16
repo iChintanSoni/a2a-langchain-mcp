@@ -16,3 +16,8 @@ nodes:
       - containerPort: 30003
         hostPort: 5050
         protocol: TCP
+      # docling-serve → localhost:5001
+      - containerPort: 30004
+        hostPort: 5001
+        protocol: TCP
+
