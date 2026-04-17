@@ -293,6 +293,10 @@ export function registerTools(server: McpServer): void {
     "web_search",
     {
       description: "Search the internet with Tavily. Returns titles, URLs, and snippets.",
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: true,
+      },
       inputSchema: {
         query: z.string().describe("The search query"),
         max_results: z
@@ -318,6 +322,11 @@ export function registerTools(server: McpServer): void {
     {
       description:
         "Generate an image from a text prompt. Use this when the user asks to create, draw, render, or generate an image.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: true,
+      },
       inputSchema: {
         prompt: z.string().describe("The text description of the image to generate"),
       },
@@ -358,6 +367,10 @@ export function registerTools(server: McpServer): void {
     "read_url",
     {
       description: "Fetch and extract the text content of any web page.",
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: true,
+      },
       inputSchema: {
         url: z.url().describe("The URL to fetch"),
       },
@@ -372,6 +385,10 @@ export function registerTools(server: McpServer): void {
     "get_datetime",
     {
       description: "Get the current date and time. Use this for any time-sensitive question.",
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {
         timezone: z
           .string()

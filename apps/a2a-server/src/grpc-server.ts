@@ -14,7 +14,7 @@ import { createLogger } from "common";
 
 const log = createLogger("a2a/grpc");
 
-export function startGrpcServer(requestHandler: DefaultRequestHandler): void {
+export function startGrpcServer(requestHandler: DefaultRequestHandler): Server {
   const server = new Server();
 
   server.addService(
@@ -28,4 +28,6 @@ export function startGrpcServer(requestHandler: DefaultRequestHandler): void {
       port: ENV.GRPC_PORT,
     });
   });
+
+  return server;
 }

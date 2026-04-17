@@ -6,6 +6,7 @@
  * DefaultRequestHandler; this file is only concerned with HTTP wiring.
  */
 
+import http from "node:http";
 import express from "express";
 import cors from "cors";
 import { AGENT_CARD_PATH } from "@a2a-js/sdk";
@@ -21,11 +22,11 @@ import { createLogger } from "common";
 
 const log = createLogger("a2a/http");
 
-export function startHttpServer(requestHandler: DefaultRequestHandler): void {
+export function startHttpServer(requestHandler: DefaultRequestHandler): http.Server {
   const corsOrigin = ENV.CORS_ORIGIN === "*" ? "*" : ENV.CORS_ORIGIN.split(",").map(s => s.trim());
   const app = express();
   app.use(cors({ origin: corsOrigin }));
-  app.use(express.json());
+  app.use(express.json({ limit: "10mb" }));
 
   app.use((req, res, next) => {
     const startedAt = Date.now();
@@ -64,9 +65,17 @@ export function startHttpServer(requestHandler: DefaultRequestHandler): void {
     next();
   });
 
-  // Health check endpoint
-  app.get("/health", (req, res) => {
-    res.status(200).send("OK");
+  // Deep health check: verifies MCP reachability in addition to liveness
+  app.get("/health", async (_req, res) => {
+    const mcpUrl = `http://${ENV.MCP_SERVER_HOST}:${ENV.MCP_SERVER_PORT}/health`;
+    try {
+      const r = await fetch(mcpUrl, { signal: AbortSignal.timeout(2_000) });
+      if (!r.ok) throw new Error(`MCP health returned ${r.status}`);
+      res.status(200).json({ status: "ok", mcp: "ok" });
+    } catch (err) {
+      log.warn("Health check: MCP server unreachable", err);
+      res.status(503).json({ status: "degraded", mcp: "unreachable" });
+    }
   });
 
   app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: requestHandler }));
@@ -79,7 +88,7 @@ export function startHttpServer(requestHandler: DefaultRequestHandler): void {
   );
   app.use("/a2a/rest", restHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }));
 
-  app.listen(ENV.PORT, ENV.HOST, () => {
+  const server = app.listen(ENV.PORT, ENV.HOST, () => {
     log.success("HTTP server listening", {
       url: `http://${ENV.HOST}:${ENV.PORT}`,
       agentCard: `http://${ENV.HOST}:${ENV.PORT}/${AGENT_CARD_PATH}`,
@@ -87,4 +96,6 @@ export function startHttpServer(requestHandler: DefaultRequestHandler): void {
       rest: `http://${ENV.HOST}:${ENV.PORT}/a2a/rest`,
     });
   });
+
+  return server;
 }

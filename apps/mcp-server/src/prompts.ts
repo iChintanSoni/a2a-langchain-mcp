@@ -16,6 +16,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createLogger } from "common";
+import { INSTRUCTIONS } from "#src/resources.ts";
 
 const log = createLogger("mcp/prompts");
 
@@ -47,12 +48,7 @@ export function registerPrompts(server: McpServer): void {
             role: "user",
             content: {
               type: "text",
-              text:
-                `You are a knowledgeable and concise chat agent. ` +
-                `Use the available tools (web_search, read_url, get_datetime, generate_image) when needed. ` +
-                `Cite sources when using web results.` +
-                contextSection +
-                `\n\n## Question\n${user_question}`,
+              text: INSTRUCTIONS + contextSection + `\n\n## Question\n${user_question}`,
             },
           },
         ],

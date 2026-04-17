@@ -25,6 +25,9 @@ import { type MultiServerMCPClient } from "@langchain/mcp-adapters";
 import { ChatOllama } from "@langchain/ollama";
 import { readResource } from "#src/mcp-client.ts";
 import { ENV } from "#src/env.ts";
+import { createLogger } from "common";
+
+const log = createLogger("a2a/agent");
 
 // ─── Fallback system prompt ───────────────────────────────────────────────────
 // Used only when the MCP resource is unreachable at startup.
@@ -58,9 +61,9 @@ export async function buildAgent(mcpClient: MultiServerMCPClient) {
   let systemPrompt: string;
   try {
     systemPrompt = await readResource("chat://instructions");
-    console.log("[agent] System prompt loaded from MCP resource chat://instructions");
+    log.success("System prompt loaded from MCP resource chat://instructions");
   } catch (err) {
-    console.warn("[agent] Could not load system prompt from MCP resource; using fallback.", err);
+    log.warn("Could not load system prompt from MCP resource; using fallback.", err);
     systemPrompt = FALLBACK_SYSTEM_PROMPT;
   }
 

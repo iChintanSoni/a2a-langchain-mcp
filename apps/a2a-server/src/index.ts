@@ -35,5 +35,19 @@ const requestHandler = new DefaultRequestHandler(
 
 log.info("Request handler initialized");
 
-startHttpServer(requestHandler);
-startGrpcServer(requestHandler);
+const httpServer = startHttpServer(requestHandler);
+const grpcServer = startGrpcServer(requestHandler);
+
+// ─── Graceful shutdown ──────────────────────────────────────────────────────
+
+function shutdown(signal: string): void {
+  log.warn(`${signal} received — shutting down gracefully`);
+  httpServer.close();
+  grpcServer.tryShutdown(() => {
+    log.info("A2A server shutdown complete");
+    process.exit(0);
+  });
+}
+
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));

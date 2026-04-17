@@ -82,7 +82,7 @@ test("MCP client can read instructions and render the chat prompt", async () => 
     });
     const text = prompt.messages[0].content.type === "text" ? prompt.messages[0].content.text : "";
 
-    assert.match(text, /Use the available tools/);
+    assert.match(text, /web_search/);
     assert.match(text, /## Additional Context\nUse the release notes\./);
     assert.match(text, /## Question\nWhat changed\?/);
   } finally {
