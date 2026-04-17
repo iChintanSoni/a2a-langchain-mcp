@@ -38,6 +38,75 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
+type ToolContentBlock =
+  | { type: "text"; text: string }
+  | {
+      type: "image";
+      data: string;
+      mimeType?: string;
+    }
+  | {
+      type: "image_url";
+      image_url?: { url?: string };
+    }
+  | Record<string, unknown>;
+
+function normalizeToolContentBlocks(content: unknown): ToolContentBlock[] {
+  if (typeof content === "string") {
+    return [{ type: "text", text: content }];
+  }
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  return content as ToolContentBlock[];
+}
+
+function extractImagePayloads(
+  blocks: ToolContentBlock[],
+): Array<{ bytes: string; mimeType: string }> {
+  const payloads: Array<{ bytes: string; mimeType: string }> = [];
+
+  for (const block of blocks) {
+    const typedBlock = block as {
+      type?: string;
+      data?: unknown;
+      mimeType?: unknown;
+      image_url?: { url?: unknown };
+    };
+
+    if (typedBlock.type === "image" && typeof typedBlock.data === "string") {
+      payloads.push({
+        bytes: typedBlock.data,
+        mimeType:
+          typeof typedBlock.mimeType === "string"
+            ? typedBlock.mimeType
+            : "image/png",
+      });
+      continue;
+    }
+
+    if (typedBlock.type === "image_url" && typeof typedBlock.image_url?.url === "string") {
+      const url = typedBlock.image_url.url;
+      if (!url.startsWith("data:")) continue;
+
+      const commaIndex = url.indexOf(",");
+      if (commaIndex === -1) continue;
+
+      const header = url.slice(5, commaIndex);
+      const bytes = url.slice(commaIndex + 1);
+      const mimeType = header.split(";")[0] || "image/png";
+      payloads.push({ bytes, mimeType });
+    }
+  }
+
+  return payloads;
+}
+
+function mimeTypeToExtension(mimeType: string): string {
+  const subtype = mimeType.split("/")[1] ?? "png";
+  return subtype === "jpeg" ? "jpg" : subtype;
+}
+
 // ─── TaskSession ─────────────────────────────────────────────────────────────
 
 /**
@@ -168,6 +237,8 @@ class TaskSession {
         const query =
           typeof tc.args?.query === "string"
             ? tc.args.query
+            : typeof tc.args?.prompt === "string"
+              ? tc.args.prompt
             : JSON.stringify(tc.args);
         this.toolQueryMap.set(tc.id, { name: tc.name, query });
         log.event("Tool execution started", {
@@ -194,11 +265,39 @@ class TaskSession {
         };
         this.toolQueryMap.delete(msg.tool_call_id);
 
-        const rawContent = String(msg.content || "");
+        const contentBlocks = normalizeToolContentBlocks(msg.content);
+        const rawContent =
+          typeof msg.content === "string"
+            ? msg.content
+            : contentBlocks.length > 0
+              ? JSON.stringify(contentBlocks)
+              : "";
         log.success("Tool execution finished", {
           taskId: this.context.taskId,
           toolName: tool.name,
         });
+
+        const imagePayloads = extractImagePayloads(contentBlocks);
+        if (imagePayloads.length > 0) {
+          imagePayloads.forEach((image, index) => {
+            const ext = mimeTypeToExtension(image.mimeType);
+            this.publishArtifact(
+              `${msg.tool_call_id}:${index}`,
+              "generated-image",
+              [
+                {
+                  kind: "file",
+                  file: {
+                    name: `generated-image.${ext}`,
+                    mimeType: image.mimeType,
+                    bytes: image.bytes,
+                  },
+                },
+              ],
+              true,
+            );
+          });
+        }
 
         let resultCount = 0;
         try {
@@ -206,6 +305,9 @@ class TaskSession {
           resultCount =
             (Array.isArray(parsed) ? parsed : parsed.results || []).length || 0;
         } catch {}
+        if (imagePayloads.length > 0) {
+          resultCount = imagePayloads.length;
+        }
 
         this.publishArtifact(
           msg.tool_call_id,
@@ -301,7 +403,7 @@ class ChatAgentExecutor implements AgentExecutor {
       // 2. Prepare Input (resolve files -> format via MCP prompt)
       let input = await this.prepareInput(requestContext);
       try {
-        input = await getMCPPrompt("personal_assistant", {
+        input = await getMCPPrompt("chat_agent", {
           user_question: input,
         });
         log.success("Prompt rendered from MCP server", {
