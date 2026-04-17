@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "prepare": "git config core.hooksPath .githooks",
+    "prepare": "node scripts/prepare-hooks.mjs",
     "lint": "node scripts/lint-syntax.mjs",
     "format": "prettier --write . --ignore-unknown",
     "format:check": "prettier --check . --ignore-unknown",

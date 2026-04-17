@@ -1,14 +1,15 @@
-FROM node:24-slim AS deps
+FROM docker.io/library/node:24-slim AS deps
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY scripts/prepare-hooks.mjs ./scripts/prepare-hooks.mjs
 COPY packages/common/package.json ./packages/common/package.json
 COPY apps/a2a-server/package.json ./apps/a2a-server/package.json
 
 RUN npm ci --omit=dev --workspace=a2a-server
 
-FROM node:24-slim AS runner
+FROM docker.io/library/node:24-slim AS runner
 
 WORKDIR /app/apps/a2a-server
 

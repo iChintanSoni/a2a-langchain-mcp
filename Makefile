@@ -10,104 +10,165 @@
 #   ollama pull x/flux2-klein:4b
 #   export TAVILY_API_KEY=...                     # For mcp-server web search
 #
-# Quick start:
-#   make all
+# Common commands:
+#   make mcp       # Run only mcp-server
+#   make a2a       # Run only a2a-server + redis
+#   make apps      # Run mcp-server + a2a-server + redis
+#   make docling   # Run only docling-serve
+#   make all       # Run apps + docling
 #
+# Images are pulled only when they are missing locally.
 # ─────────────────────────────────────────────────────────────────────────────
 
-CLUSTER_NAME   := a2a-cluster
-KIND_CONFIG    := k8s/kind-config.yaml
-NAMESPACE      := a2a-system
-IMAGES := mcp-server a2a-server
+CLUSTER_NAME := a2a-cluster
+KIND_CONFIG := k8s/kind-config.yaml
+NAMESPACE := a2a-system
+
+NODE_IMAGE := docker.io/library/node:24-slim
+REDIS_IMAGE := docker.io/redis/redis-stack-server:7.4.0-v8
 DOCLING_IMAGE := quay.io/docling-project/docling-serve-cpu:latest
+
+MCP_IMAGE := mcp-server:latest
+A2A_IMAGE := a2a-server:latest
+
 MCP_ENV_FILE := apps/mcp-server/.env
+PODMAN_BUILD_FLAGS ?= --pull=never
+
 # Podman is used as the container engine; tell kind to use it.
 export KIND_EXPERIMENTAL_PROVIDER := podman
 
 -include $(MCP_ENV_FILE)
 
-.PHONY: all build cluster-create load deploy secret-mcp wait delete clean help logs-mcp logs-a2a logs-ui status machine-reset machine-status
+.PHONY: all apps mcp a2a docling clean-images delete clean help logs-mcp logs-a2a logs-docling status machine-reset machine-status
+.PHONY: cluster namespace ensure-node ensure-redis ensure-docling build-mcp build-a2a load-mcp load-a2a load-redis load-docling
+.PHONY: deploy-mcp deploy-a2a deploy-redis deploy-docling secret-mcp wait-mcp wait-a2a wait-redis wait-docling endpoints-apps endpoints-mcp endpoints-a2a endpoints-docling
 
-# ── Top-level targets ─────────────────────────────────────────────────────────
-
-## all: Build images, create cluster, load images, deploy everything
-all: build cluster-create load deploy
-	@echo ""
-	@echo "✅  Deployment complete. Access points:"
-	@echo "    A2A Server    → http://localhost:4000"
-	@echo "    A2A gRPC      → localhost:4001"
-	@echo "    MCP Server    → http://localhost:5050"
-	@echo "    Docling Serve → http://localhost:30004"
-	@echo "    Ollama        → http://localhost:11434  (host machine)"
-
-## build: Build all container images with Podman
-build:
-	@echo "── Building mcp-server ──────────────────────────────────────────────────────"
-	podman build -t mcp-server:latest -f apps/mcp-server/Containerfile .
-	@echo "── Building a2a-server ──────────────────────────────────────────────────────"
-	podman build -t a2a-server:latest -f apps/a2a-server/Containerfile .
-	@echo "── Pulling External Images ──────────────────────────────────────────────────"
-	podman pull $(DOCLING_IMAGE)
-
-## cluster-create: Create the kind cluster (idempotent – skips if already exists)
-cluster-create:
-	@if kind get clusters 2>/dev/null | grep -q "^$(CLUSTER_NAME)$$"; then \
-		echo "ℹ️  Cluster '$(CLUSTER_NAME)' already exists – skipping creation."; \
+define ensure_image
+	@if podman image exists $(1); then \
+		echo "Using cached $(1)"; \
 	else \
-		echo "── Creating kind cluster '$(CLUSTER_NAME)' ────────────────────────────────────"; \
+		echo "Pulling missing $(1)"; \
+		podman pull $(1); \
+	fi
+endef
+
+## all: Run apps and docling
+all: apps docling
+
+## apps: Run mcp-server, a2a-server, and redis
+apps: cluster namespace build-mcp build-a2a load-redis load-mcp load-a2a deploy-redis deploy-mcp deploy-a2a wait-redis wait-mcp wait-a2a endpoints-apps
+
+## mcp: Run only mcp-server
+mcp: cluster namespace build-mcp load-mcp deploy-mcp wait-mcp endpoints-mcp
+
+## a2a: Run only a2a-server and redis
+a2a: cluster namespace build-a2a load-redis load-a2a deploy-redis deploy-a2a wait-redis wait-a2a endpoints-a2a
+
+## docling: Run only docling-serve
+docling: cluster namespace load-docling deploy-docling wait-docling endpoints-docling
+
+cluster:
+	@if kind get clusters 2>/dev/null | grep -q "^$(CLUSTER_NAME)$$"; then \
+		echo "Using existing kind cluster '$(CLUSTER_NAME)'"; \
+	else \
+		echo "Creating kind cluster '$(CLUSTER_NAME)'"; \
 		kind create cluster --config $(KIND_CONFIG); \
 	fi
 
-## load: Load locally-built images into the kind cluster
-load:
-	@echo "── Loading images into kind cluster ─────────────────────────────────────────"
-	@for img in $(IMAGES); do \
-		echo "  Loading $$img:latest"; \
-		podman save $$img:latest | kind load image-archive /dev/stdin \
-			--name $(CLUSTER_NAME); \
-	done
-	@echo "  Loading Docling (this may take a few minutes)..."
-	@podman save $(DOCLING_IMAGE) | kind load image-archive /dev/stdin --name $(CLUSTER_NAME)
-
-## deploy: Apply all Kubernetes manifests
-deploy:
-	@echo "── Applying Kubernetes manifests ────────────────────────────────────────────"
+namespace:
 	kubectl apply -f k8s/namespace.yaml
-	kubectl apply -f k8s/redis/
-	kubectl apply -f k8s/docling-serve/
-	@$(MAKE) secret-mcp
-	kubectl apply -f k8s/mcp-server/
-	kubectl apply -f k8s/a2a-server/
-	@echo "── Waiting for rollout ───────────────────────────────────────────────────────"
-	kubectl rollout status deployment/redis         -n $(NAMESPACE) --timeout=60s
-	kubectl rollout status deployment/docling-serve -n $(NAMESPACE) --timeout=600s
-	kubectl rollout status deployment/mcp-server   -n $(NAMESPACE) --timeout=300s
-	kubectl rollout status deployment/a2a-server   -n $(NAMESPACE) --timeout=300s
 
-## secret-mcp: Create or update the Tavily API key secret for mcp-server
+ensure-node:
+	$(call ensure_image,$(NODE_IMAGE))
+
+ensure-redis:
+	$(call ensure_image,$(REDIS_IMAGE))
+
+ensure-docling:
+	$(call ensure_image,$(DOCLING_IMAGE))
+
+build-mcp: ensure-node
+	podman build $(PODMAN_BUILD_FLAGS) -t $(MCP_IMAGE) -f apps/mcp-server/Containerfile .
+
+build-a2a: ensure-node
+	podman build $(PODMAN_BUILD_FLAGS) -t $(A2A_IMAGE) -f apps/a2a-server/Containerfile .
+
+load-mcp:
+	podman save $(MCP_IMAGE) | kind load image-archive /dev/stdin --name $(CLUSTER_NAME)
+
+load-a2a:
+	podman save $(A2A_IMAGE) | kind load image-archive /dev/stdin --name $(CLUSTER_NAME)
+
+load-redis: ensure-redis
+	podman save $(REDIS_IMAGE) | kind load image-archive /dev/stdin --name $(CLUSTER_NAME)
+
+load-docling: ensure-docling
+	podman save $(DOCLING_IMAGE) | kind load image-archive /dev/stdin --name $(CLUSTER_NAME)
+
+deploy-redis:
+	kubectl apply -f k8s/redis/
+
+deploy-mcp: secret-mcp
+	kubectl apply -f k8s/mcp-server/
+
+deploy-a2a:
+	kubectl apply -f k8s/a2a-server/
+
+deploy-docling:
+	kubectl apply -f k8s/docling-serve/
+
 secret-mcp:
 	@test -n "$(strip $(TAVILY_API_KEY))" || (echo "$(MCP_ENV_FILE) must define TAVILY_API_KEY."; exit 1)
-	@echo "── Applying mcp-server secret ───────────────────────────────────────────────"
-	@kubectl create secret generic mcp-server-secret \
+	kubectl create secret generic mcp-server-secret \
 		--namespace $(NAMESPACE) \
 		--from-literal=TAVILY_API_KEY="$(TAVILY_API_KEY)" \
 		--dry-run=client -o yaml | kubectl apply -f -
 
-## delete: Tear down all deployed resources (keeps the cluster)
+wait-redis:
+	kubectl rollout status deployment/redis -n $(NAMESPACE) --timeout=60s
+
+wait-mcp:
+	kubectl rollout status deployment/mcp-server -n $(NAMESPACE) --timeout=300s
+
+wait-a2a:
+	kubectl rollout status deployment/a2a-server -n $(NAMESPACE) --timeout=300s
+
+wait-docling:
+	kubectl rollout status deployment/docling-serve -n $(NAMESPACE) --timeout=600s
+
+endpoints-apps:
+	@echo ""
+	@echo "Deployment complete:"
+	@echo "  MCP Server    -> http://localhost:5050"
+	@echo "  A2A Server    -> http://localhost:4000"
+	@echo "  A2A gRPC      -> localhost:4001"
+	@echo "  Ollama        -> http://localhost:11434"
+
+endpoints-mcp:
+	@echo ""
+	@echo "MCP Server -> http://localhost:5050"
+
+endpoints-a2a:
+	@echo ""
+	@echo "A2A Server -> http://localhost:4000"
+	@echo "A2A gRPC   -> localhost:4001"
+
+endpoints-docling:
+	@echo ""
+	@echo "Docling Serve -> http://localhost:30004"
+
+## clean-images: Remove dangling Podman images and build cache
+clean-images:
+	podman image prune -f
+	podman builder prune -f || true
+
+## delete: Delete deployed Kubernetes resources but keep the cluster
 delete:
-	@echo "── Deleting namespace $(NAMESPACE) ──────────────────────────────────────────"
 	kubectl delete namespace $(NAMESPACE) --ignore-not-found
 
-## clean: Delete the kind cluster and all associated resources
+## clean: Delete the kind cluster
 clean:
-	@echo "── Deleting kind cluster '$(CLUSTER_NAME)' ──────────────────────────────────"
 	kind delete cluster --name $(CLUSTER_NAME)
-
-# ── Utilities ─────────────────────────────────────────────────────────────────
-
-## logs-docling: Tail docling-serve logs
-logs-docling:
-	kubectl logs -f deployment/docling-serve -n $(NAMESPACE)
 
 ## logs-mcp: Tail mcp-server logs
 logs-mcp:
@@ -117,11 +178,15 @@ logs-mcp:
 logs-a2a:
 	kubectl logs -f deployment/a2a-server -n $(NAMESPACE)
 
+## logs-docling: Tail docling-serve logs
+logs-docling:
+	kubectl logs -f deployment/docling-serve -n $(NAMESPACE)
+
 ## status: Show pod status
 status:
 	kubectl get pods -n $(NAMESPACE)
 
-## machine-reset: [CAUTION] Deletes and recreates the podman machine with performance settings (8GB Mac)
+## machine-reset: Delete and recreate the podman machine
 machine-reset:
 	podman machine stop || true
 	podman machine rm -f || true
