@@ -12,9 +12,7 @@ const log = createLogger("a2a/file-loader");
  * @param filePart The A2A FilePart containing the file data or URI.
  * @returns A tuple of [filename, mimeType, content]
  */
-export async function loadDocumentContent(
-  filePart: FilePart,
-): Promise<[string, string, string]> {
+export async function loadDocumentContent(filePart: FilePart): Promise<[string, string, string]> {
   const file = filePart.file;
   const name = file.name || "unnamed_file";
   const mimeType = file.mimeType || "application/octet-stream";
@@ -28,9 +26,7 @@ export async function loadDocumentContent(
     log.info("Downloading file from URI", { name, uri: file.uri });
     const response = await fetch(file.uri);
     if (!response.ok) {
-      throw new Error(
-        `Failed to download file from ${file.uri}: ${response.statusText}`,
-      );
+      throw new Error(`Failed to download file from ${file.uri}: ${response.statusText}`);
     }
     fileBuffer = Buffer.from(await response.arrayBuffer());
   } else if ("bytes" in file) {
@@ -88,8 +84,7 @@ export async function loadDocumentContent(
 
   // 3. Fallback: Try reading as UTF-8 text if it's a known text extension or conversion failed
   const allowedTextExts = [".txt", ".md", ".json", ".csv", ".xml"];
-  const isLikelyText =
-    allowedTextExts.includes(ext) || mimeType.startsWith("text/");
+  const isLikelyText = allowedTextExts.includes(ext) || mimeType.startsWith("text/");
 
   if (isLikelyText) {
     try {
@@ -104,7 +99,5 @@ export async function loadDocumentContent(
     }
   }
 
-  throw new Error(
-    `Could not process file ${name}: Unsupported type or conversion failed.`,
-  );
+  throw new Error(`Could not process file ${name}: Unsupported type or conversion failed.`);
 }

@@ -5,7 +5,8 @@ This repository bridges Langchain's powerful graph-based agent architecture with
 ## Architecture Architecture
 
 There are two primary applications inside this monorepo:
-1. **`a2a-server`**: Connects to the A2A Protocol via REST and gRPC, and coordinates the Langgraph `AgentExecutor` to fulfill tasks. 
+
+1. **`a2a-server`**: Connects to the A2A Protocol via REST and gRPC, and coordinates the Langgraph `AgentExecutor` to fulfill tasks.
 2. **`mcp-server`**: Operates the external suite of runtime tools (`web_search`, `read_url`, `get_datetime`, `generate_image`) and instructional context that the Langchain agent calls upon via MCP paradigms.
 
 ---
@@ -17,6 +18,7 @@ The primary and recommended way to orchestrate the infrastructure locally is usi
 ### Prerequisites
 
 You must have the following installed on your machine:
+
 - `podman`, `kind`, and `kubectl` (Recommended: `brew install podman kind kubectl`)
 - `ollama` (Running locally on your host OS)
 
@@ -42,6 +44,7 @@ make all
 ```
 
 Once deployment completes, the services are surfaced over the following endpoints:
+
 - **A2A Server**: `http://localhost:4000`
 - **A2A gRPC**: `localhost:4001`
 - **MCP Server**: `http://localhost:5050`
@@ -64,6 +67,7 @@ If you intend to develop without building unverified container images to Kuberne
 > `podman run -d -p 6379:6379 redis/redis-stack-server:7.4.0-v8`
 
 Run the MCP Server:
+
 ```bash
 cd apps/mcp-server
 npm install
@@ -71,6 +75,7 @@ npm run dev
 ```
 
 In a new terminal window, run the A2A Agent Server:
+
 ```bash
 cd apps/a2a-server
 npm install

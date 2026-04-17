@@ -75,15 +75,14 @@ app.post("/mcp", async (req: Request, res: Response) => {
   const id = randomUUID();
   log.event("Creating new MCP session", { sessionId: id });
 
-  const transport: StreamableHTTPServerTransport =
-    new StreamableHTTPServerTransport({
-      // Tell the transport what ID to use and store it once initialized.
-      sessionIdGenerator: () => id,
-      onsessioninitialized: (sid): void => {
-        sessions.set(sid, transport);
-        log.success("MCP session initialized", { sessionId: sid });
-      },
-    });
+  const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
+    // Tell the transport what ID to use and store it once initialized.
+    sessionIdGenerator: () => id,
+    onsessioninitialized: (sid): void => {
+      sessions.set(sid, transport);
+      log.success("MCP session initialized", { sessionId: sid });
+    },
+  });
 
   // Clean up when the client disconnects.
   transport.onclose = () => {
@@ -107,9 +106,7 @@ app.get("/mcp", async (req: Request, res: Response) => {
 
   if (!transport) {
     log.warn("Rejected GET for missing or invalid MCP session", { sessionId });
-    res
-      .status(400)
-      .json({ error: "Missing or invalid mcp-session-id header." });
+    res.status(400).json({ error: "Missing or invalid mcp-session-id header." });
     return;
   }
 

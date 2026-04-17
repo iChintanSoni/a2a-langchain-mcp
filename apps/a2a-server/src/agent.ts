@@ -57,15 +57,10 @@ export async function buildAgent(mcpClient: MultiServerMCPClient) {
   // This is the same text surfaced to any MCP client via resources/read.
   let systemPrompt: string;
   try {
-      systemPrompt = await readResource("chat://instructions");
-      console.log(
-        "[agent] System prompt loaded from MCP resource chat://instructions",
-      );
+    systemPrompt = await readResource("chat://instructions");
+    console.log("[agent] System prompt loaded from MCP resource chat://instructions");
   } catch (err) {
-    console.warn(
-      "[agent] Could not load system prompt from MCP resource; using fallback.",
-      err,
-    );
+    console.warn("[agent] Could not load system prompt from MCP resource; using fallback.", err);
     systemPrompt = FALLBACK_SYSTEM_PROMPT;
   }
 

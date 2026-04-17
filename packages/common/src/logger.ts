@@ -52,12 +52,7 @@ function formatData(data: unknown): string {
   })}`;
 }
 
-function logLine(
-  scope: string,
-  level: LogLevel,
-  message: string,
-  data?: unknown,
-): void {
+function logLine(scope: string, level: LogLevel, message: string, data?: unknown): void {
   const timestamp = color(new Date().toISOString(), COLORS.gray);
   const scopeLabel = color(`[${scope}]`, BOLD);
 

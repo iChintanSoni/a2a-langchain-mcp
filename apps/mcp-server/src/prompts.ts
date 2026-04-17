@@ -29,23 +29,17 @@ export function registerPrompts(server: McpServer): void {
   server.registerPrompt(
     "chat_agent",
     {
-      description:
-        "A ready-to-use prompt template for asking the chat agent a question.",
+      description: "A ready-to-use prompt template for asking the chat agent a question.",
       argsSchema: {
         user_question: z.string().describe("The user's question"),
-        context: z
-          .string()
-          .optional()
-          .describe("Optional context (e.g. location, preferences)"),
+        context: z.string().optional().describe("Optional context (e.g. location, preferences)"),
       },
     },
     ({ user_question, context }) => {
       log.event("chat_agent prompt requested", {
         hasContext: Boolean(context),
       });
-      const contextSection = context
-        ? `\n\n## Additional Context\n${context}`
-        : "";
+      const contextSection = context ? `\n\n## Additional Context\n${context}` : "";
 
       return {
         messages: [

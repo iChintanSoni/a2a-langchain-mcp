@@ -22,14 +22,10 @@ export function startGrpcServer(requestHandler: DefaultRequestHandler): void {
     grpcService({ requestHandler, userBuilder: UserBuilder.noAuthentication }),
   );
 
-  server.bindAsync(
-    `${ENV.HOST}:${ENV.GRPC_PORT}`,
-    ServerCredentials.createInsecure(),
-    () => {
-      log.success("gRPC server listening", {
-        host: ENV.HOST,
-        port: ENV.GRPC_PORT,
-      });
-    },
-  );
+  server.bindAsync(`${ENV.HOST}:${ENV.GRPC_PORT}`, ServerCredentials.createInsecure(), () => {
+    log.success("gRPC server listening", {
+      host: ENV.HOST,
+      port: ENV.GRPC_PORT,
+    });
+  });
 }

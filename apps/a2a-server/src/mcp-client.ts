@@ -54,18 +54,13 @@ async function readResource(uri: string): Promise<string> {
  * Fetch a named prompt from the MCP server, fill in the given arguments, and
  * return the rendered message text.
  */
-async function getMCPPrompt(
-  name: string,
-  args: Record<string, string>,
-): Promise<string> {
+async function getMCPPrompt(name: string, args: Record<string, string>): Promise<string> {
   log.event("Requesting MCP prompt", { name });
   const client = await getRawClient();
   const result = await client.getPrompt({ name, arguments: args });
   const rendered = result.messages
-    .map((m) =>
-      typeof m.content === "object" && "text" in m.content
-        ? (m.content.text as string)
-        : "",
+    .map(m =>
+      typeof m.content === "object" && "text" in m.content ? (m.content.text as string) : "",
     )
     .join("\n");
   log.success("MCP prompt rendered", {

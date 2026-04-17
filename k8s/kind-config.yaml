@@ -20,4 +20,3 @@ nodes:
       - containerPort: 30004
         hostPort: 5001
         protocol: TCP
-

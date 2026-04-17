@@ -29,21 +29,35 @@ export function startHttpServer(requestHandler: DefaultRequestHandler): void {
   app.use((req, res, next) => {
     const startedAt = Date.now();
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    const isHealthCheck = req.method === "GET" && req.path === "/health";
 
-    log.event("HTTP request received", {
-      method: req.method,
-      path: req.path,
-      sessionId,
-    });
+    if (!isHealthCheck) {
+      log.event("HTTP request received", {
+        method: req.method,
+        path: req.path,
+        sessionId,
+      });
+    }
 
     res.on("finish", () => {
-      log.info("HTTP request finished", {
+      if (isHealthCheck && res.statusCode < 400) {
+        return;
+      }
+
+      const requestSummary = {
         method: req.method,
         path: req.path,
         statusCode: res.statusCode,
         durationMs: Date.now() - startedAt,
         sessionId,
-      });
+      };
+
+      if (isHealthCheck) {
+        log.warn("Health check request failed", requestSummary);
+        return;
+      }
+
+      log.info("HTTP request finished", requestSummary);
     });
 
     next();
@@ -54,10 +68,7 @@ export function startHttpServer(requestHandler: DefaultRequestHandler): void {
     res.status(200).send("OK");
   });
 
-  app.use(
-    `/${AGENT_CARD_PATH}`,
-    agentCardHandler({ agentCardProvider: requestHandler }),
-  );
+  app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: requestHandler }));
   app.use(
     "/a2a/jsonrpc",
     jsonRpcHandler({
@@ -65,10 +76,7 @@ export function startHttpServer(requestHandler: DefaultRequestHandler): void {
       userBuilder: UserBuilder.noAuthentication,
     }),
   );
-  app.use(
-    "/a2a/rest",
-    restHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }),
-  );
+  app.use("/a2a/rest", restHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }));
 
   app.listen(ENV.PORT, ENV.HOST, () => {
     log.success("HTTP server listening", {

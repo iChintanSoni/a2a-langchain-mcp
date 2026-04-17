@@ -92,7 +92,7 @@ async function webSearch(query: string, maxResults: number = 5): Promise<SearchR
       } => typeof result.title === "string" && typeof result.url === "string",
     )
     .slice(0, maxResults)
-    .map((result) => ({
+    .map(result => ({
       title: result.title,
       url: result.url,
       snippet: result.content ?? "",
@@ -109,7 +109,9 @@ function getMimeExtension(mimeType: string): string {
   return subtype.includes("png") ? "png" : subtype;
 }
 
-async function generateImage(prompt: string): Promise<
+async function generateImage(
+  prompt: string,
+): Promise<
   | { success: true; imageBase64: string; mimeType: string; provider: string }
   | { success: false; error: string }
 > {
@@ -180,9 +182,7 @@ async function readUrl(url: string): Promise<string> {
       status: response.status,
       statusText: response.statusText,
     });
-    throw new Error(
-      `Failed to fetch ${url}: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
   }
 
   const contentType = response.headers.get("content-type") ?? "";
@@ -260,8 +260,7 @@ export function registerTools(server: McpServer): void {
   server.registerTool(
     "web_search",
     {
-      description:
-        "Search the internet with Tavily. Returns titles, URLs, and snippets.",
+      description: "Search the internet with Tavily. Returns titles, URLs, and snippets.",
       inputSchema: {
         query: z.string().describe("The search query"),
         max_results: z
@@ -340,15 +339,12 @@ export function registerTools(server: McpServer): void {
   server.registerTool(
     "get_datetime",
     {
-      description:
-        "Get the current date and time. Use this for any time-sensitive question.",
+      description: "Get the current date and time. Use this for any time-sensitive question.",
       inputSchema: {
         timezone: z
           .string()
           .optional()
-          .describe(
-            "IANA timezone (e.g. 'America/New_York'). Defaults to UTC.",
-          ),
+          .describe("IANA timezone (e.g. 'America/New_York'). Defaults to UTC."),
       },
     },
     ({ timezone }) => {

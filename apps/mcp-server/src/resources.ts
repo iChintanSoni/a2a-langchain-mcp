@@ -53,7 +53,7 @@ export function registerResources(server: McpServer): void {
       description: "System instructions for the chat agent.",
       mimeType: "text/plain",
     },
-    (_uri) => {
+    _uri => {
       log.event("instructions resource requested");
       log.success("instructions resource served");
       return {

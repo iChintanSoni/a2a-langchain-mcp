@@ -10,9 +10,7 @@ const envSchema = z.object({
   MCP_SERVER_PORT: z.string().transform(Number).default(5050),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   DOCLING_SERVE_URL: z.string().optional(),
-  OLLAMA_BASE_URL: z
-    .string()
-    .default("http://127.0.0.1:11434"),
+  OLLAMA_BASE_URL: z.string().default("http://127.0.0.1:11434"),
   OLLAMA_MODEL: z.string().default("qwen3:4b"),
 });
 
@@ -21,7 +19,7 @@ try {
 } catch (error) {
   if (error instanceof z.ZodError) {
     console.error("❌ Invalid environment variables:");
-    error.issues.forEach((err) => {
+    error.issues.forEach(err => {
       console.error(` - ${err.path.join(".")}: ${err.message}`);
     });
     process.exit(1);
