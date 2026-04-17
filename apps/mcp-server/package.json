@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node --experimental-transform-types --watch-path=./src --env-file=.env src/index.ts",
     "prod": "node --experimental-transform-types src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --experimental-transform-types --test tests/*.test.ts"
   },
   "keywords": [],
   "author": "",

@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "prepare": "git config core.hooksPath .githooks",
+    "lint": "node scripts/lint-syntax.mjs",
+    "format": "prettier --write . --ignore-unknown",
+    "format:check": "prettier --check . --ignore-unknown",
+    "test": "npm --workspaces test"
   },
   "repository": {
     "type": "git",

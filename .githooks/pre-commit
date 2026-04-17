@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+echo "Running pre-commit checks..."
+
+staged_files="$(mktemp)"
+trap 'rm -f "$staged_files"' EXIT
+
+git diff --cached --name-only -z --diff-filter=ACMR > "$staged_files"
+
+npm run lint
+
+if [ -s "$staged_files" ]; then
+  xargs -0 npx prettier --write --ignore-unknown < "$staged_files"
+  xargs -0 git add -- < "$staged_files"
+fi
+
+npm test
+
+echo "Pre-commit checks passed."
