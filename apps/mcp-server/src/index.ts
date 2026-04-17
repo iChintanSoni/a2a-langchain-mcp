@@ -30,21 +30,35 @@ if (!ENV.TAVILY_API_KEY) {
 app.use((req, res, next) => {
   const startedAt = Date.now();
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
+  const isHealthCheck = req.method === "GET" && req.path === "/health";
 
-  log.event("HTTP request received", {
-    method: req.method,
-    path: req.path,
-    sessionId,
-  });
+  if (!isHealthCheck) {
+    log.event("HTTP request received", {
+      method: req.method,
+      path: req.path,
+      sessionId,
+    });
+  }
 
   res.on("finish", () => {
-    log.info("HTTP request finished", {
+    if (isHealthCheck && res.statusCode < 400) {
+      return;
+    }
+
+    const requestSummary = {
       method: req.method,
       path: req.path,
       statusCode: res.statusCode,
       durationMs: Date.now() - startedAt,
       sessionId,
-    });
+    };
+
+    if (isHealthCheck) {
+      log.warn("Health check request failed", requestSummary);
+      return;
+    }
+
+    log.info("HTTP request finished", requestSummary);
   });
 
   next();

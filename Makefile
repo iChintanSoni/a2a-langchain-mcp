@@ -28,18 +28,25 @@ NODE_IMAGE := docker.io/library/node:24-slim
 REDIS_IMAGE := docker.io/redis/redis-stack-server:7.4.0-v8
 DOCLING_IMAGE := quay.io/docling-project/docling-serve-cpu:latest
 
-MCP_IMAGE := mcp-server:latest
-A2A_IMAGE := a2a-server:latest
+IMAGE_TAG ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo local)-$(shell date -u +%Y%m%d%H%M%S)
+
+MCP_IMAGE_REPO := mcp-server
+A2A_IMAGE_REPO := a2a-server
+MCP_IMAGE := $(MCP_IMAGE_REPO):$(IMAGE_TAG)
+A2A_IMAGE := $(A2A_IMAGE_REPO):$(IMAGE_TAG)
+MCP_K8S_IMAGE := localhost/$(MCP_IMAGE)
+A2A_K8S_IMAGE := localhost/$(A2A_IMAGE)
 
 MCP_ENV_FILE := apps/mcp-server/.env
 PODMAN_BUILD_FLAGS ?= --pull=never
+IMAGE_RETAIN ?= 5
 
 # Podman is used as the container engine; tell kind to use it.
 export KIND_EXPERIMENTAL_PROVIDER := podman
 
 -include $(MCP_ENV_FILE)
 
-.PHONY: all apps mcp a2a docling clean-images delete clean help logs-mcp logs-a2a logs-docling status machine-reset machine-status
+.PHONY: all apps mcp a2a docling clean-images clean-app-images delete clean help logs-mcp logs-a2a logs-docling status machine-reset machine-status
 .PHONY: cluster namespace ensure-node ensure-redis ensure-docling build-mcp build-a2a load-mcp load-a2a load-redis load-docling
 .PHONY: deploy-mcp deploy-a2a deploy-redis deploy-docling secret-mcp wait-mcp wait-a2a wait-redis wait-docling endpoints-apps endpoints-mcp endpoints-a2a endpoints-docling
 
@@ -109,10 +116,14 @@ deploy-redis:
 	kubectl apply -f k8s/redis/
 
 deploy-mcp: secret-mcp
-	kubectl apply -f k8s/mcp-server/
+	kubectl apply -f k8s/mcp-server/configmap.yaml
+	kubectl apply -f k8s/mcp-server/service.yaml
+	kubectl set image --local -f k8s/mcp-server/deployment.yaml mcp-server=$(MCP_K8S_IMAGE) -o yaml | kubectl apply -f -
 
 deploy-a2a:
-	kubectl apply -f k8s/a2a-server/
+	kubectl apply -f k8s/a2a-server/configmap.yaml
+	kubectl apply -f k8s/a2a-server/service.yaml
+	kubectl set image --local -f k8s/a2a-server/deployment.yaml a2a-server=$(A2A_K8S_IMAGE) -o yaml | kubectl apply -f -
 
 deploy-docling:
 	kubectl apply -f k8s/docling-serve/
@@ -161,6 +172,17 @@ endpoints-docling:
 clean-images:
 	podman image prune -f
 	podman builder prune -f || true
+
+## clean-app-images: Keep the newest app image tags and remove older local builds
+clean-app-images:
+	@for repo in $(MCP_IMAGE_REPO) $(A2A_IMAGE_REPO); do \
+		echo "Pruning $$repo images, keeping newest $(IMAGE_RETAIN)"; \
+		podman images "$$repo" --format "{{.Tag}} {{.Repository}}:{{.Tag}}" | \
+			awk '{ tag = $$1; ts = substr(tag, length(tag) - 13); if (length(ts) == 14 && ts ~ /^[0-9]+$$/) print ts, $$2 }' | \
+			sort -r | \
+			awk 'NR > retain { print $$2 }' retain="$(IMAGE_RETAIN)" | \
+			xargs -r podman rmi || true; \
+	done
 
 ## delete: Delete deployed Kubernetes resources but keep the cluster
 delete:
