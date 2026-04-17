@@ -60,7 +60,7 @@ If you intend to develop without building unverified container images to Kuberne
 
 > [!NOTE]
 > Since `a2a-server` uses Native Node Transform Types (`--experimental-transform-types`), ensure your Node.js runtime is configured to **Latest Node v22+** or **Node v23+**. You will also need to spin up an ephemeral Redis instance for session state via docker/podman:
-> `podman run -d -p 6379:6379 redis`
+> `podman run -d -p 6379:6379 redis/redis-stack-server:7.4.0-v8`
 
 Run the MCP Server:
 ```bash
