@@ -7,6 +7,7 @@
  */
 
 import express from "express";
+import cors from "cors";
 import { AGENT_CARD_PATH } from "@a2a-js/sdk";
 import { type DefaultRequestHandler } from "@a2a-js/sdk/server";
 import {
@@ -19,6 +20,7 @@ import { ENV } from "#src/env.ts";
 
 export function startHttpServer(requestHandler: DefaultRequestHandler): void {
   const app = express();
+  app.use(cors());
   app.use(express.json());
 
   // Health check endpoint
