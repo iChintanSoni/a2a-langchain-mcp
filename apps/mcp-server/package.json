@@ -1,7 +1,7 @@
 {
   "name": "mcp-server",
   "version": "1.0.0",
-  "description": "MCP server for personal assistant agent",
+  "description": "MCP server for chat agent",
   "scripts": {
     "dev": "node --experimental-transform-types --watch-path=./src --env-file=.env src/index.ts",
     "prod": "node --experimental-transform-types src/index.ts",
