@@ -12,6 +12,9 @@ const envSchema = z.object({
   DOCLING_SERVE_URL: z.string().optional(),
   OLLAMA_BASE_URL: z.string().default("http://127.0.0.1:11434"),
   OLLAMA_MODEL: z.string().default("qwen3:4b"),
+  // Comma-separated allowed origins, e.g. "https://app.example.com,https://ui.example.com".
+  // Defaults to "*" (open) for local dev; set explicitly in production.
+  CORS_ORIGIN: z.string().default("*"),
 });
 
 try {

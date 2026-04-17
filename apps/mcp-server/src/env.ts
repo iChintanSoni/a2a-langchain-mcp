@@ -6,6 +6,8 @@ const envSchema = z.object({
   TAVILY_API_KEY: z.string().optional(),
   OLLAMA_HOST: z.string().default("http://127.0.0.1:11434"),
   OLLAMA_IMAGE_MODEL: z.string().default("x/flux2-klein:4b"),
+  // Comma-separated allowed origins. Defaults to "*" for local dev.
+  CORS_ORIGIN: z.string().default("*"),
 });
 
 try {

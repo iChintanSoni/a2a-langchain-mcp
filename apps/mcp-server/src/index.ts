@@ -21,8 +21,9 @@ import { createLogger } from "common";
 
 const log = createLogger("mcp/http");
 
+const corsOrigin = ENV.CORS_ORIGIN === "*" ? "*" : ENV.CORS_ORIGIN.split(",").map(s => s.trim());
 const app = express();
-app.use(cors());
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 
 if (!ENV.TAVILY_API_KEY) {

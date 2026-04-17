@@ -163,10 +163,42 @@ async function generateImage(
 // ─── read_url ─────────────────────────────────────────────────────────────────
 
 /**
+ * Return true if the hostname resolves to a private/loopback/link-local address
+ * that should never be reachable from a public agent (SSRF guard).
+ */
+function isPrivateHostname(hostname: string): boolean {
+  // Strip IPv6 brackets
+  const host = hostname.replace(/^\[|\]$/g, "");
+
+  // Loopback
+  if (host === "localhost" || host === "::1") return true;
+
+  // Plain IPv4
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const [, a, b, c] = ipv4.map(Number);
+    return (
+      a === 10 || // 10.0.0.0/8
+      (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
+      (a === 192 && b === 168) || // 192.168.0.0/16
+      a === 127 || // 127.0.0.0/8
+      (a === 169 && b === 254) || // 169.254.0.0/16 (link-local)
+      (a === 100 && b >= 64 && b <= 127) // 100.64.0.0/10 (carrier-grade NAT)
+    );
+  }
+
+  return false;
+}
+
+/**
  * Fetch a URL and return its readable plain-text content.
  * HTML tags, scripts, and styles are stripped so the agent only sees text.
  */
 async function readUrl(url: string): Promise<string> {
+  const parsed = new URL(url);
+  if (isPrivateHostname(parsed.hostname)) {
+    throw new Error(`Fetching private/internal addresses is not allowed: ${parsed.hostname}`);
+  }
   log.event("read_url started", { url });
   const response = await fetch(url, {
     headers: {

@@ -22,8 +22,9 @@ import { createLogger } from "common";
 const log = createLogger("a2a/http");
 
 export function startHttpServer(requestHandler: DefaultRequestHandler): void {
+  const corsOrigin = ENV.CORS_ORIGIN === "*" ? "*" : ENV.CORS_ORIGIN.split(",").map(s => s.trim());
   const app = express();
-  app.use(cors());
+  app.use(cors({ origin: corsOrigin }));
   app.use(express.json());
 
   app.use((req, res, next) => {
