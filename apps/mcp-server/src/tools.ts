@@ -1,18 +1,16 @@
 /**
- * Tool implementations and MCP registrations for the personal assistant.
+ * Tool implementations and MCP registrations for the Chat Agent.
  *
  * Each function below is the logic behind one MCP tool. `registerTools`
  * wires them into a McpServer instance using the non-deprecated `registerTool`
  * API. Keeping both implementation and registration here means you can read a
  * tool's description, schema, and logic in one place.
- *
- * No external search packages are used — web_search calls DuckDuckGo's HTML
- * endpoint directly via fetch, which is available in Node 18+.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { createLogger } from "common";
+import { ENV } from "#src/env.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,77 +22,195 @@ export interface SearchResult {
 
 const log = createLogger("mcp/tools");
 
+type TavilySearchResponse = {
+  results?: Array<{
+    title?: string;
+    url?: string;
+    content?: string;
+  }>;
+};
+
+type GeminiImageResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+        inlineData?: {
+          data?: string;
+          mimeType?: string;
+        };
+      }>;
+    };
+  }>;
+};
+
+function formatSearchResults(results: SearchResult[]): string {
+  if (results.length === 0) {
+    return "No results found.";
+  }
+
+  return results
+    .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`)
+    .join("\n\n---\n\n");
+}
+
 // ─── web_search ───────────────────────────────────────────────────────────────
 
 /**
- * Search the web via DuckDuckGo's HTML endpoint. No API key needed.
- * Parses result titles, redirect URLs, and snippets from the response HTML.
+ * Search the web via Tavily's search API.
  */
-async function webSearch(
-  query: string,
-  maxResults: number = 5,
-): Promise<SearchResult[]> {
+async function webSearch(query: string, maxResults: number = 5): Promise<SearchResult[]> {
   log.event("web_search started", { query, maxResults });
-  const body = new URLSearchParams({ q: query, kl: "us-en" });
-  const response = await fetch("https://html.duckduckgo.com/html/", {
+
+  if (!ENV.TAVILY_API_KEY) {
+    throw new Error("TAVILY_API_KEY is not configured.");
+  }
+
+  const response = await fetch("https://api.tavily.com/search", {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": "Mozilla/5.0 (compatible; PersonalAssistant/1.0)",
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${ENV.TAVILY_API_KEY}`,
     },
-    body: body.toString(),
+    body: JSON.stringify({
+      query,
+      max_results: maxResults,
+      search_depth: "basic",
+      include_answer: false,
+      include_raw_content: false,
+      include_images: false,
+      include_favicon: false,
+    }),
     signal: AbortSignal.timeout(10_000),
   });
 
   if (!response.ok) {
     log.error("web_search failed", { query, status: response.status });
-    throw new Error(`DuckDuckGo search failed: ${response.status}`);
+    throw new Error(`Tavily search failed: ${response.status}`);
   }
 
-  const html = await response.text();
-  const results: SearchResult[] = [];
-
-  // Each result block looks like:
-  //   <a class="result__a" href="/l/?uddg=ENCODED_URL&...">Title</a>
-  //   <a class="result__snippet">Snippet text</a>
-  const resultBlocks = html.split('<div class="result ');
-
-  for (const block of resultBlocks.slice(1)) {
-    if (results.length >= maxResults) break;
-
-    const titleMatch = block.match(
-      /class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/,
-    );
-    const snippetMatch = block.match(
-      /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/,
-    );
-
-    if (!titleMatch) continue;
-
-    const rawHref = titleMatch[1];
-    const title = titleMatch[2].replace(/<[^>]+>/g, "").trim();
-    const snippet = snippetMatch
-      ? snippetMatch[1].replace(/<[^>]+>/g, "").trim()
-      : "";
-
-    // DDG wraps the real URL in a redirect — extract it from the `uddg` param.
-    let url = rawHref;
-    try {
-      const params = new URL(
-        rawHref.startsWith("/") ? `https://duckduckgo.com${rawHref}` : rawHref,
-      ).searchParams;
-      url = decodeURIComponent(params.get("uddg") ?? rawHref);
-    } catch {
-      // keep the raw href if parsing fails
-    }
-
-    if (title && url) {
-      results.push({ title, url, snippet });
-    }
-  }
+  const data = (await response.json()) as TavilySearchResponse;
+  const results = (data.results ?? [])
+    .filter(
+      (
+        result,
+      ): result is Required<Pick<SearchResult, "title" | "url">> & {
+        content?: string;
+      } => typeof result.title === "string" && typeof result.url === "string",
+    )
+    .slice(0, maxResults)
+    .map((result) => ({
+      title: result.title,
+      url: result.url,
+      snippet: result.content ?? "",
+    }));
 
   log.success("web_search completed", { query, resultCount: results.length });
   return results;
+}
+
+// ─── generate_image ──────────────────────────────────────────────────────────
+
+function getMimeExtension(mimeType: string): string {
+  const subtype = mimeType.split("/")[1] ?? "png";
+  return subtype.includes("png") ? "png" : subtype;
+}
+
+async function generateImage(prompt: string): Promise<
+  | { success: true; imageBase64: string; mimeType: string; provider: string }
+  | { success: false; error: string }
+> {
+  log.event("generate_image started", { provider: ENV.AI_PROVIDER });
+
+  try {
+    if (ENV.AI_PROVIDER === "ollama") {
+      const response = await fetch(`${ENV.OLLAMA_HOST}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: ENV.OLLAMA_IMAGE_MODEL,
+          prompt,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(60_000),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        return { success: false, error: `Ollama image generation failed: ${body}` };
+      }
+
+      const data = (await response.json()) as {
+        images?: string[];
+        response?: string;
+      };
+      let base64Image = data.images?.[0];
+      if (!base64Image && typeof data.response === "string") {
+        base64Image = data.response;
+      }
+
+      if (!base64Image) {
+        return { success: false, error: "No image was returned by Ollama." };
+      }
+
+      if (base64Image.startsWith("data:")) {
+        base64Image = base64Image.split(",")[1] ?? base64Image;
+      }
+
+      return {
+        success: true,
+        imageBase64: base64Image,
+        mimeType: "image/png",
+        provider: "ollama",
+      };
+    }
+
+    if (!ENV.GEMINI_API_KEY) {
+      return { success: false, error: "GEMINI_API_KEY is not configured." };
+    }
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ENV.GEMINI_IMAGE_MODEL)}:generateContent?key=${encodeURIComponent(ENV.GEMINI_API_KEY)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"],
+          },
+        }),
+        signal: AbortSignal.timeout(60_000),
+      },
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+      return { success: false, error: `Gemini image generation failed: ${body}` };
+    }
+
+    const data = (await response.json()) as GeminiImageResponse;
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+
+    for (const part of parts) {
+      if (part.inlineData?.data) {
+        return {
+          success: true,
+          imageBase64: part.inlineData.data,
+          mimeType: part.inlineData.mimeType ?? "image/png",
+          provider: "gemini",
+        };
+      }
+    }
+
+    return { success: false, error: "No image was returned by Gemini." };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 // ─── read_url ─────────────────────────────────────────────────────────────────
@@ -200,7 +316,7 @@ export function registerTools(server: McpServer): void {
     "web_search",
     {
       description:
-        "Search the internet with DuckDuckGo. Returns titles, URLs, and snippets.",
+        "Search the internet with Tavily. Returns titles, URLs, and snippets.",
       inputSchema: {
         query: z.string().describe("The search query"),
         max_results: z
@@ -215,15 +331,50 @@ export function registerTools(server: McpServer): void {
     async ({ query, max_results }) => {
       const results = await webSearch(query, max_results);
 
-      if (results.length === 0) {
-        return { content: [{ type: "text", text: "No results found." }] };
+      return {
+        content: [{ type: "text", text: formatSearchResults(results) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    "generate_image",
+    {
+      description:
+        "Generate an image from a text prompt. Use this when the user asks to create, draw, render, or generate an image.",
+      inputSchema: {
+        prompt: z.string().describe("The text description of the image to generate"),
+      },
+    },
+    async ({ prompt }) => {
+      const result = await generateImage(prompt);
+
+      if (!result.success) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: result.error }],
+        };
       }
 
-      const text = results
-        .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`)
-        .join("\n\n---\n\n");
+      const mimeType = result.mimeType;
+      const ext = getMimeExtension(mimeType);
 
-      return { content: [{ type: "text", text }] };
+      return {
+        content: [
+          { type: "text", text: `Generated image with ${result.provider} for: ${prompt}` },
+          {
+            type: "image",
+            data: result.imageBase64,
+            mimeType,
+          },
+        ],
+        structuredContent: {
+          success: true,
+          provider: result.provider,
+          mimeType,
+          fileName: `generated-image.${ext}`,
+        },
+      };
     },
   );
 

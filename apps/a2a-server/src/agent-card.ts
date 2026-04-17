@@ -1,5 +1,5 @@
 /**
- * Agent card definition for the Personal Assistant.
+ * Agent card definition for the Chat Agent.
  *
  * The agent card is the A2A protocol's identity document — it describes what
  * the agent can do, which transports it speaks, and where to reach it. Clients
@@ -10,27 +10,46 @@ import { type AgentCard } from "@a2a-js/sdk";
 import { ENV } from "#src/env.ts";
 
 export const agentCard: AgentCard = {
-  name: "Personal Assistant",
+  name: "Chat Agent",
   description:
-    "A personal assistant that answers questions from its own knowledge " +
-    "or searches the internet when needed. Supports multi-turn conversations.",
+    "A conversational A2A agent with search, image input, and image generation.",
   protocolVersion: "0.3.0",
-  version: "0.1.0",
+  version: "1.0.0",
+  preferredTransport: "JSONRPC",
   url: `http://${ENV.CARD_HOST}:${ENV.PORT}/a2a/jsonrpc`,
   skills: [
     {
       id: "chat",
       name: "Chat",
-      description: "Ask any question and get a well-researched answer.",
-      tags: ["chat", "search", "assistant"],
+      description:
+        "Answer conversational prompts and use web search when current information is needed.",
+      tags: ["chat", "search"],
+      examples: [
+        "What is the capital of France?",
+        "Search for the latest news on AI",
+      ],
+      inputModes: ["text/plain", "image/*"],
+      outputModes: ["text/plain"],
+    },
+    {
+      id: "image-generation",
+      name: "Image Generation",
+      description: "Generate an image from a text prompt.",
+      tags: ["image", "generation", "creative"],
+      examples: [
+        "Generate an image of a sunset over mountains",
+        "Draw a futuristic city at night",
+      ],
+      inputModes: ["text/plain"],
+      outputModes: ["image/png"],
     },
   ],
   capabilities: {
     streaming: true,
-    pushNotifications: false,
+    stateTransitionHistory: true,
   },
-  defaultInputModes: ["text"],
-  defaultOutputModes: ["text"],
+  defaultInputModes: ["text/plain", "image/*"],
+  defaultOutputModes: ["text/plain", "image/png"],
   additionalInterfaces: [
     {
       url: `http://${ENV.CARD_HOST}:${ENV.PORT}/a2a/jsonrpc`,

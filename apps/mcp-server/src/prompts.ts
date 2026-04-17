@@ -1,5 +1,5 @@
 /**
- * MCP prompts for the personal assistant.
+ * MCP prompts for the Chat Agent.
  *
  * Prompts are reusable message templates that MCP clients fill in with
  * arguments before sending to an LLM. `registerPrompts` wires them into a
@@ -9,8 +9,8 @@
  * rather than the old array-of-descriptor format.
  *
  * Prompts exposed:
- *  - personal_assistant  Formats a user question (with optional context) into
- *                        a structured message ready for the agent.
+ *  - chat_agent  Formats a user question (with optional context) into
+ *                a structured message ready for the agent.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -27,10 +27,10 @@ const log = createLogger("mcp/prompts");
  */
 export function registerPrompts(server: McpServer): void {
   server.registerPrompt(
-    "personal_assistant",
+    "chat_agent",
     {
       description:
-        "A ready-to-use prompt template for asking the personal assistant a question.",
+        "A ready-to-use prompt template for asking the chat agent a question.",
       argsSchema: {
         user_question: z.string().describe("The user's question"),
         context: z
@@ -40,7 +40,7 @@ export function registerPrompts(server: McpServer): void {
       },
     },
     ({ user_question, context }) => {
-      log.event("personal_assistant prompt requested", {
+      log.event("chat_agent prompt requested", {
         hasContext: Boolean(context),
       });
       const contextSection = context
@@ -54,8 +54,8 @@ export function registerPrompts(server: McpServer): void {
             content: {
               type: "text",
               text:
-                `You are a knowledgeable and concise personal assistant. ` +
-                `Use the available tools (web_search, read_url, get_datetime) when needed. ` +
+                `You are a knowledgeable and concise chat agent. ` +
+                `Use the available tools (web_search, read_url, get_datetime, generate_image) when needed. ` +
                 `Cite sources when using web results.` +
                 contextSection +
                 `\n\n## Question\n${user_question}`,
@@ -65,5 +65,5 @@ export function registerPrompts(server: McpServer): void {
       };
     },
   );
-  log.success("personal_assistant prompt registered");
+  log.success("chat_agent prompt registered");
 }

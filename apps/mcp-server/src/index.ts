@@ -23,6 +23,13 @@ const log = createLogger("mcp/http");
 const app = express();
 app.use(express.json());
 
+if (!ENV.TAVILY_API_KEY) {
+  log.warn("TAVILY_API_KEY is not configured; web_search will fail until it is set.");
+}
+if (ENV.AI_PROVIDER === "gemini" && !ENV.GEMINI_API_KEY) {
+  log.warn("GEMINI_API_KEY is not configured; generate_image will fail until it is set.");
+}
+
 app.use((req, res, next) => {
   const startedAt = Date.now();
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
@@ -134,8 +141,8 @@ app.delete("/mcp", async (req: Request, res: Response) => {
 app.listen(ENV.PORT, ENV.HOST, () => {
   log.success("MCP server listening", {
     url: `http://${ENV.HOST}:${ENV.PORT}/mcp`,
-    tools: ["web_search", "read_url", "get_datetime"],
-    resources: ["pa://instructions"],
-    prompts: ["personal_assistant"],
+    tools: ["web_search", "generate_image", "read_url", "get_datetime"],
+    resources: ["chat://instructions"],
+    prompts: ["chat_agent"],
   });
 });

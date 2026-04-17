@@ -3,6 +3,12 @@ import { z } from "zod";
 const envSchema = z.object({
   HOST: z.string(),
   PORT: z.string().transform(Number).default(5050),
+  TAVILY_API_KEY: z.string().optional(),
+  AI_PROVIDER: z.enum(["gemini", "ollama"]).default("gemini"),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_IMAGE_MODEL: z.string().default("gemini-2.5-flash-image"),
+  OLLAMA_HOST: z.string().default("http://127.0.0.1:11434"),
+  OLLAMA_IMAGE_MODEL: z.string().default("llava"),
 });
 
 try {
