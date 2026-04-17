@@ -21,6 +21,7 @@
     "@langchain/mcp-adapters": "^1",
     "@langchain/ollama": "^1",
     "@modelcontextprotocol/sdk": "^1",
+    "common": "file:../../packages/common",
     "express": "^5",
     "cors": "^2.8.5",
     "langchain": "^1",

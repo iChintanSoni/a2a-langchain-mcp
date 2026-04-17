@@ -15,6 +15,9 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { createLogger } from "common";
+
+const log = createLogger("mcp/prompts");
 
 // ─── MCP registration ─────────────────────────────────────────────────────────
 
@@ -37,6 +40,9 @@ export function registerPrompts(server: McpServer): void {
       },
     },
     ({ user_question, context }) => {
+      log.event("personal_assistant prompt requested", {
+        hasContext: Boolean(context),
+      });
       const contextSection = context
         ? `\n\n## Additional Context\n${context}`
         : "";
@@ -59,4 +65,5 @@ export function registerPrompts(server: McpServer): void {
       };
     },
   );
+  log.success("personal_assistant prompt registered");
 }

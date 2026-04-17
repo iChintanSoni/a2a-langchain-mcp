@@ -11,6 +11,9 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createLogger } from "common";
+
+const log = createLogger("mcp/resources");
 
 // ─── Content ──────────────────────────────────────────────────────────────────
 
@@ -47,8 +50,12 @@ export function registerResources(server: McpServer): void {
       description: "System instructions for the personal assistant.",
       mimeType: "text/plain",
     },
-    (_uri) => ({
-      contents: [{ uri: "pa://instructions", text: INSTRUCTIONS }],
-    }),
+    (_uri) => {
+      log.event("instructions resource requested");
+      log.success("instructions resource served");
+      return {
+        contents: [{ uri: "pa://instructions", text: INSTRUCTIONS }],
+      };
+    },
   );
 }

@@ -22,8 +22,10 @@ import { getFileParts, getUserInput } from "#src/util.ts";
 import { loadDocumentContent } from "#src/file-loader.ts";
 import { getMCPPrompt } from "#src/mcp-client.ts";
 import crypto from "node:crypto";
+import { createLogger } from "common";
 
 type Agent = Awaited<ReturnType<typeof buildAgent>>;
+const log = createLogger("a2a/executor");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,7 +44,10 @@ function isAbortError(error: unknown): boolean {
  * Manages the state and protocol events for a single task execution.
  */
 class TaskSession {
-  private readonly toolQueryMap = new Map<string, { name: string; query: string }>();
+  private readonly toolQueryMap = new Map<
+    string,
+    { name: string; query: string }
+  >();
   private responseText = "";
   private usageMetadata: any;
 
@@ -53,14 +58,23 @@ class TaskSession {
     private readonly responseArtifactId = crypto.randomUUID(),
   ) {}
 
-  publishStatus(state: "working" | "completed" | "failed" | "canceled", final = false, error?: unknown) {
+  publishStatus(
+    state: "working" | "completed" | "failed" | "canceled",
+    final = false,
+    error?: unknown,
+  ) {
     const status: any = { state, timestamp: new Date().toISOString() };
     if (error) {
       status.message = {
         kind: "message",
         messageId: crypto.randomUUID(),
         role: "agent",
-        parts: [{ kind: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
+        parts: [
+          {
+            kind: "text",
+            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
       };
     }
     this.eventBus.publish({
@@ -72,7 +86,13 @@ class TaskSession {
     });
   }
 
-  private publishArtifact(artifactId: string, name: string, parts: any[], lastChunk = false, metadata?: any) {
+  private publishArtifact(
+    artifactId: string,
+    name: string,
+    parts: any[],
+    lastChunk = false,
+    metadata?: any,
+  ) {
     this.eventBus.publish({
       kind: "artifact-update",
       taskId: this.context.taskId,
@@ -84,6 +104,10 @@ class TaskSession {
   }
 
   async run(agent: Agent, input: string) {
+    log.event("Starting agent stream", {
+      taskId: this.context.taskId,
+      contextId: this.context.contextId,
+    });
     const stream = await agent.stream(
       { messages: [{ role: "human", content: input }] },
       {
@@ -104,6 +128,10 @@ class TaskSession {
     }
 
     this.finalizeResponse();
+    log.success("Agent stream finished", {
+      taskId: this.context.taskId,
+      contextId: this.context.contextId,
+    });
   }
 
   /**
@@ -142,7 +170,11 @@ class TaskSession {
             ? tc.args.query
             : JSON.stringify(tc.args);
         this.toolQueryMap.set(tc.id, { name: tc.name, query });
-        console.log(`[executor] Tool execution started: ${tc.name}`);
+        log.event("Tool execution started", {
+          taskId: this.context.taskId,
+          toolName: tc.name,
+          query,
+        });
         this.publishArtifact(tc.id, "tool-call", [
           {
             kind: "data",
@@ -163,12 +195,16 @@ class TaskSession {
         this.toolQueryMap.delete(msg.tool_call_id);
 
         const rawContent = String(msg.content || "");
-        console.log(`[executor] Tool execution finished: ${tool.name}`);
+        log.success("Tool execution finished", {
+          taskId: this.context.taskId,
+          toolName: tool.name,
+        });
 
         let resultCount = 0;
         try {
           const parsed = JSON.parse(rawContent);
-          resultCount = (Array.isArray(parsed) ? parsed : (parsed.results || [])).length || 0;
+          resultCount =
+            (Array.isArray(parsed) ? parsed : parsed.results || []).length || 0;
         } catch {}
 
         this.publishArtifact(
@@ -227,8 +263,17 @@ class ChatAgentExecutor implements AgentExecutor {
     return this.agent;
   }
 
-  async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
+  async execute(
+    requestContext: RequestContext,
+    eventBus: ExecutionEventBus,
+  ): Promise<void> {
     const { taskId, contextId, userMessage, task } = requestContext;
+
+    log.event("Task received", {
+      taskId,
+      contextId,
+      hasExistingTask: Boolean(task),
+    });
 
     // 1. Ensure task exists and transition to "working"
     if (!task) {
@@ -243,33 +288,49 @@ class ChatAgentExecutor implements AgentExecutor {
 
     const abortController = new AbortController();
     this.abortControllers.set(taskId, abortController);
-    const session = new TaskSession(requestContext, eventBus, abortController.signal);
+    const session = new TaskSession(
+      requestContext,
+      eventBus,
+      abortController.signal,
+    );
 
     session.publishStatus("working");
+    log.info("Task marked working", { taskId, contextId });
 
     try {
       // 2. Prepare Input (resolve files -> format via MCP prompt)
       let input = await this.prepareInput(requestContext);
       try {
-        input = await getMCPPrompt("personal_assistant", { user_question: input });
+        input = await getMCPPrompt("personal_assistant", {
+          user_question: input,
+        });
+        log.success("Prompt rendered from MCP server", {
+          taskId,
+          contextId,
+        });
       } catch (err) {
-        console.warn("[executor] MCP prompt failed, using raw input", err);
+        log.warn("MCP prompt failed, using raw input", err);
       }
 
       // 3. Run Agent
       const agent = await this.getAgent();
+      log.debug("Agent instance ready", { taskId, contextId });
       await session.run(agent, input);
 
       session.publishStatus("completed", true);
+      log.success("Task completed", { taskId, contextId });
     } catch (error) {
       if (abortController.signal.aborted || isAbortError(error)) {
         session.publishStatus("canceled", true);
+        log.warn("Task canceled", { taskId, contextId });
       } else {
         session.publishStatus("failed", true, error);
+        log.error("Task failed", error);
         throw error;
       }
     } finally {
       this.abortControllers.delete(taskId);
+      log.debug("Task session cleaned up", { taskId, contextId });
     }
   }
 
@@ -277,17 +338,39 @@ class ChatAgentExecutor implements AgentExecutor {
     const textInput = getUserInput(requestContext);
     const fileParts = getFileParts(requestContext);
 
+    log.info("Preparing task input", {
+      taskId: requestContext.taskId,
+      contextId: requestContext.contextId,
+      textLength: textInput.length,
+      fileCount: fileParts.length,
+    });
+
     if (fileParts.length === 0) return textInput;
 
-    console.log(`[executor] Loading ${fileParts.length} files...`);
-    const contents = await Promise.all(fileParts.map(async (part) => {
-      try {
-        const [name, , content] = await loadDocumentContent(part);
-        return `--- FILE: ${name} ---\n${content}\n--- END FILE ---`;
-      } catch (err) {
-        return `--- ERROR LOADING FILE: ${part.file.name} ---`;
-      }
-    }));
+    log.event("Loading attached files", {
+      taskId: requestContext.taskId,
+      fileCount: fileParts.length,
+    });
+    const contents = await Promise.all(
+      fileParts.map(async (part) => {
+        try {
+          const [name, mimeType, content] = await loadDocumentContent(part);
+          log.success("Loaded file content", {
+            taskId: requestContext.taskId,
+            name,
+            mimeType,
+            contentLength: content.length,
+          });
+          return `--- FILE: ${name} ---\n${content}\n--- END FILE ---`;
+        } catch (err) {
+          log.warn("Failed to load attached file", {
+            taskId: requestContext.taskId,
+            fileName: part.file.name,
+          });
+          return `--- ERROR LOADING FILE: ${part.file.name} ---`;
+        }
+      }),
+    );
 
     return `${textInput}\n\nAttached Files:\n${contents.join("\n\n")}`;
   }

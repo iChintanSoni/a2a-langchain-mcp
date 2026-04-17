@@ -10,6 +10,9 @@ import { Server, ServerCredentials } from "@grpc/grpc-js";
 import { type DefaultRequestHandler } from "@a2a-js/sdk/server";
 import { grpcService, A2AService, UserBuilder } from "@a2a-js/sdk/server/grpc";
 import { ENV } from "#src/env.ts";
+import { createLogger } from "common";
+
+const log = createLogger("a2a/grpc");
 
 export function startGrpcServer(requestHandler: DefaultRequestHandler): void {
   const server = new Server();
@@ -23,7 +26,10 @@ export function startGrpcServer(requestHandler: DefaultRequestHandler): void {
     `${ENV.HOST}:${ENV.GRPC_PORT}`,
     ServerCredentials.createInsecure(),
     () => {
-      console.log(`🚀 gRPC server  ${ENV.HOST}:${ENV.GRPC_PORT}`);
+      log.success("gRPC server listening", {
+        host: ENV.HOST,
+        port: ENV.GRPC_PORT,
+      });
     },
   );
 }

@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/iChintanSoni/a2a-langchain-mcp#readme",
   "workspaces": [
+    "packages/common",
     "apps/a2a-server",
     "apps/mcp-server"
   ],

@@ -12,6 +12,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { createLogger } from "common";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,8 @@ export interface SearchResult {
   url: string;
   snippet: string;
 }
+
+const log = createLogger("mcp/tools");
 
 // ─── web_search ───────────────────────────────────────────────────────────────
 
@@ -31,6 +34,7 @@ async function webSearch(
   query: string,
   maxResults: number = 5,
 ): Promise<SearchResult[]> {
+  log.event("web_search started", { query, maxResults });
   const body = new URLSearchParams({ q: query, kl: "us-en" });
   const response = await fetch("https://html.duckduckgo.com/html/", {
     method: "POST",
@@ -43,6 +47,7 @@ async function webSearch(
   });
 
   if (!response.ok) {
+    log.error("web_search failed", { query, status: response.status });
     throw new Error(`DuckDuckGo search failed: ${response.status}`);
   }
 
@@ -88,6 +93,7 @@ async function webSearch(
     }
   }
 
+  log.success("web_search completed", { query, resultCount: results.length });
   return results;
 }
 
@@ -98,6 +104,7 @@ async function webSearch(
  * HTML tags, scripts, and styles are stripped so the agent only sees text.
  */
 async function readUrl(url: string): Promise<string> {
+  log.event("read_url started", { url });
   const response = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; PersonalAssistant/1.0)",
@@ -107,6 +114,11 @@ async function readUrl(url: string): Promise<string> {
   });
 
   if (!response.ok) {
+    log.error("read_url failed", {
+      url,
+      status: response.status,
+      statusText: response.statusText,
+    });
     throw new Error(
       `Failed to fetch ${url}: ${response.status} ${response.statusText}`,
     );
@@ -116,10 +128,16 @@ async function readUrl(url: string): Promise<string> {
   const raw = await response.text();
 
   if (!contentType.includes("text/html")) {
-    return raw.slice(0, 12_000);
+    const content = raw.slice(0, 12_000);
+    log.success("read_url completed", {
+      url,
+      contentType,
+      contentLength: content.length,
+    });
+    return content;
   }
 
-  return raw
+  const content = raw
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
     .replace(/<[^>]+>/g, " ")
@@ -131,6 +149,12 @@ async function readUrl(url: string): Promise<string> {
     .replace(/\s{2,}/g, " ")
     .trim()
     .slice(0, 12_000);
+  log.success("read_url completed", {
+    url,
+    contentType,
+    contentLength: content.length,
+  });
+  return content;
 }
 
 // ─── get_datetime ─────────────────────────────────────────────────────────────
@@ -139,6 +163,7 @@ async function readUrl(url: string): Promise<string> {
  * Return the current date and time, formatted for a given IANA timezone.
  */
 function getDatetime(timezone: string = "UTC"): string {
+  log.event("get_datetime started", { timezone });
   const now = new Date();
 
   try {
@@ -154,9 +179,13 @@ function getDatetime(timezone: string = "UTC"): string {
       timeZoneName: "long",
     }).format(now);
 
-    return `${formatted}\nISO 8601: ${now.toISOString()}`;
+    const text = `${formatted}\nISO 8601: ${now.toISOString()}`;
+    log.success("get_datetime completed", { timezone });
+    return text;
   } catch {
-    return `${now.toUTCString()}\nISO 8601: ${now.toISOString()}`;
+    const text = `${now.toUTCString()}\nISO 8601: ${now.toISOString()}`;
+    log.warn("get_datetime fell back to UTC", { timezone });
+    return text;
   }
 }
 

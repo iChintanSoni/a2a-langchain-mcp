@@ -16,9 +16,35 @@ import express, { type Request, type Response } from "express";
 import { randomUUID } from "node:crypto";
 import { ENV } from "#src/env.ts";
 import { createMcpServer } from "#src/mcp-server.ts";
+import { createLogger } from "common";
+
+const log = createLogger("mcp/http");
 
 const app = express();
 app.use(express.json());
+
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+  log.event("HTTP request received", {
+    method: req.method,
+    path: req.path,
+    sessionId,
+  });
+
+  res.on("finish", () => {
+    log.info("HTTP request finished", {
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startedAt,
+      sessionId,
+    });
+  });
+
+  next();
+});
 
 // Readiness/Liveness probe endpoint
 app.get("/health", (req, res) => {
@@ -36,12 +62,14 @@ app.post("/mcp", async (req: Request, res: Response) => {
 
   // If the client sends a known session ID, route to that existing session.
   if (sessionId && sessions.has(sessionId)) {
+    log.event("Routing POST to existing MCP session", { sessionId });
     await sessions.get(sessionId)!.handleRequest(req, res, req.body);
     return;
   }
 
   // No session ID (or unknown ID) → start a new session.
   const id = randomUUID();
+  log.event("Creating new MCP session", { sessionId: id });
 
   const transport: StreamableHTTPServerTransport =
     new StreamableHTTPServerTransport({
@@ -49,14 +77,19 @@ app.post("/mcp", async (req: Request, res: Response) => {
       sessionIdGenerator: () => id,
       onsessioninitialized: (sid): void => {
         sessions.set(sid, transport);
+        log.success("MCP session initialized", { sessionId: sid });
       },
     });
 
   // Clean up when the client disconnects.
-  transport.onclose = () => sessions.delete(id);
+  transport.onclose = () => {
+    sessions.delete(id);
+    log.warn("MCP session closed", { sessionId: id });
+  };
 
   // Connect a fresh MCP server to this transport and handle the request.
   const server = createMcpServer();
+  log.debug("Connecting MCP server to transport", { sessionId: id });
   await server.connect(transport);
   await transport.handleRequest(req, res, req.body);
 });
@@ -69,12 +102,14 @@ app.get("/mcp", async (req: Request, res: Response) => {
   const transport = sessionId ? sessions.get(sessionId) : undefined;
 
   if (!transport) {
+    log.warn("Rejected GET for missing or invalid MCP session", { sessionId });
     res
       .status(400)
       .json({ error: "Missing or invalid mcp-session-id header." });
     return;
   }
 
+  log.event("Streaming MCP session events", { sessionId });
   await transport.handleRequest(req, res);
 });
 
@@ -86,6 +121,7 @@ app.delete("/mcp", async (req: Request, res: Response) => {
   const transport = sessionId ? sessions.get(sessionId) : undefined;
 
   if (transport) {
+    log.event("Closing MCP session", { sessionId });
     await transport.close();
     sessions.delete(sessionId!);
   }
@@ -96,8 +132,10 @@ app.delete("/mcp", async (req: Request, res: Response) => {
 // ─── Start ─────────────────────────────────────────────────────────────────
 
 app.listen(ENV.PORT, ENV.HOST, () => {
-  console.log(`🚀 MCP Server running at http://${ENV.HOST}:${ENV.PORT}/mcp`);
-  console.log("   Tools    : web_search, read_url, get_datetime");
-  console.log("   Resources: pa://instructions");
-  console.log("   Prompts  : personal_assistant");
+  log.success("MCP server listening", {
+    url: `http://${ENV.HOST}:${ENV.PORT}/mcp`,
+    tools: ["web_search", "read_url", "get_datetime"],
+    resources: ["pa://instructions"],
+    prompts: ["personal_assistant"],
+  });
 });
