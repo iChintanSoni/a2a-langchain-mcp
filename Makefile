@@ -43,9 +43,9 @@ all: build cluster-create load deploy
 ## build: Build all container images with Podman
 build:
 	@echo "── Building mcp-server ──────────────────────────────────────────────────────"
-	podman build -t mcp-server:latest apps/mcp-server
+	podman build -t mcp-server:latest -f apps/mcp-server/Containerfile .
 	@echo "── Building a2a-server ──────────────────────────────────────────────────────"
-	podman build -t a2a-server:latest apps/a2a-server
+	podman build -t a2a-server:latest -f apps/a2a-server/Containerfile .
 	@echo "── Pulling External Images ──────────────────────────────────────────────────"
 	podman pull $(DOCLING_IMAGE)
 

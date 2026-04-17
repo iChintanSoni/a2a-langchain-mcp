@@ -1,25 +1,25 @@
-# ── Stage 1: Install production dependencies ──────────────────────────────────
 FROM node:24-slim AS deps
 
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install --omit=dev
+COPY package.json package-lock.json ./
+COPY packages/common/package.json ./packages/common/package.json
+COPY apps/mcp-server/package.json ./apps/mcp-server/package.json
 
-# ── Stage 2: Runtime ──────────────────────────────────────────────────────────
+RUN npm ci --omit=dev --workspace=mcp-server
+
 FROM node:24-slim AS runner
 
-WORKDIR /app
+WORKDIR /app/apps/mcp-server
 
-# Copy production node_modules and package.json (needed for "imports" alias map)
-COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
+COPY --from=deps /app/node_modules /app/node_modules
 
-# Copy application source
-COPY src/ ./src/
+COPY packages/common /app/packages/common
+COPY apps/mcp-server/package.json ./
+COPY apps/mcp-server/src ./src
 
 ENV NODE_ENV=production
 
 EXPOSE 5050
 
-CMD ["node", "--experimental-transform-types", "src/index.ts"]
+CMD ["npm", "run", "prod"]
