@@ -1,6 +1,6 @@
 # A2A Langchain MCP
 
-This repository bridges Langchain's powerful graph-based agent architecture with the A2A SDK and the Model Context Protocol (MCP) to provide an end-to-end, locally-executable Chat Agent.
+This repository bridges Langchain's powerful graph-based agent architecture with the A2A SDK and the Model Context Protocol (MCP) to provide an end-to-end, locally-executable Personal Assistant.
 
 ## Architecture Architecture
 
