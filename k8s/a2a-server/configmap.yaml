@@ -17,3 +17,4 @@ data:
   # Ollama runs on the host machine.
   # host.containers.internal resolves to the Podman host gateway on macOS/Linux.
   OLLAMA_BASE_URL: "http://host.containers.internal:11434"
+  OLLAMA_MODEL: "qwen3:4b"

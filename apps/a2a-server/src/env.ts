@@ -10,7 +10,10 @@ const envSchema = z.object({
   MCP_SERVER_PORT: z.string().transform(Number).default(5050),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   DOCLING_SERVE_URL: z.string().optional(),
-  AGENT_MODEL: z.string().default("ollama:qwen3:4b"),
+  OLLAMA_BASE_URL: z
+    .string()
+    .default("http://127.0.0.1:11434"),
+  OLLAMA_MODEL: z.string().default("qwen3:4b"),
 });
 
 try {

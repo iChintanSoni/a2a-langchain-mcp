@@ -22,6 +22,7 @@
 import { createAgent } from "langchain";
 import { RedisSaver } from "@langchain/langgraph-checkpoint-redis";
 import { type MultiServerMCPClient } from "@langchain/mcp-adapters";
+import { ChatOllama } from "@langchain/ollama";
 import { readResource } from "#src/mcp-client.ts";
 import { ENV } from "#src/env.ts";
 
@@ -68,8 +69,13 @@ export async function buildAgent(mcpClient: MultiServerMCPClient) {
     systemPrompt = FALLBACK_SYSTEM_PROMPT;
   }
 
+  const model = new ChatOllama({
+    baseUrl: ENV.OLLAMA_BASE_URL,
+    model: ENV.OLLAMA_MODEL,
+  });
+
   return createAgent({
-    model: ENV.AGENT_MODEL,
+    model,
     systemPrompt,
     tools,
     checkpointer,

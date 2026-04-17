@@ -30,6 +30,7 @@ podman machine start
 # Prepare the local LLM
 ollama serve
 ollama pull qwen3:4b
+ollama pull x/flux2-klein:4b
 ```
 
 ### Quick Start

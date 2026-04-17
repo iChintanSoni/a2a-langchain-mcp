@@ -30,17 +30,9 @@ type TavilySearchResponse = {
   }>;
 };
 
-type GeminiImageResponse = {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        text?: string;
-        inlineData?: {
-          data?: string;
-          mimeType?: string;
-        };
-      }>;
-    };
+type OllamaImageGenerationResponse = {
+  data?: Array<{
+    b64_json?: string;
   }>;
 };
 
@@ -121,90 +113,43 @@ async function generateImage(prompt: string): Promise<
   | { success: true; imageBase64: string; mimeType: string; provider: string }
   | { success: false; error: string }
 > {
-  log.event("generate_image started", { provider: ENV.AI_PROVIDER });
+  log.event("generate_image started", { provider: "ollama" });
 
   try {
-    if (ENV.AI_PROVIDER === "ollama") {
-      const response = await fetch(`${ENV.OLLAMA_HOST}/api/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: ENV.OLLAMA_IMAGE_MODEL,
-          prompt,
-          stream: false,
-        }),
-        signal: AbortSignal.timeout(60_000),
-      });
-
-      if (!response.ok) {
-        const body = await response.text();
-        return { success: false, error: `Ollama image generation failed: ${body}` };
-      }
-
-      const data = (await response.json()) as {
-        images?: string[];
-        response?: string;
-      };
-      let base64Image = data.images?.[0];
-      if (!base64Image && typeof data.response === "string") {
-        base64Image = data.response;
-      }
-
-      if (!base64Image) {
-        return { success: false, error: "No image was returned by Ollama." };
-      }
-
-      if (base64Image.startsWith("data:")) {
-        base64Image = base64Image.split(",")[1] ?? base64Image;
-      }
-
-      return {
-        success: true,
-        imageBase64: base64Image,
-        mimeType: "image/png",
-        provider: "ollama",
-      };
-    }
-
-    if (!ENV.GEMINI_API_KEY) {
-      return { success: false, error: "GEMINI_API_KEY is not configured." };
-    }
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ENV.GEMINI_IMAGE_MODEL)}:generateContent?key=${encodeURIComponent(ENV.GEMINI_API_KEY)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseModalities: ["TEXT", "IMAGE"],
-          },
-        }),
-        signal: AbortSignal.timeout(60_000),
-      },
-    );
+    const response = await fetch(`${ENV.OLLAMA_HOST}/v1/images/generations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: ENV.OLLAMA_IMAGE_MODEL,
+        prompt,
+        size: "1024x1024",
+        response_format: "b64_json",
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
 
     if (!response.ok) {
       const body = await response.text();
-      return { success: false, error: `Gemini image generation failed: ${body}` };
+      return { success: false, error: `Ollama image generation failed: ${body}` };
     }
 
-    const data = (await response.json()) as GeminiImageResponse;
-    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const data = (await response.json()) as OllamaImageGenerationResponse;
+    let base64Image = data.data?.[0]?.b64_json;
 
-    for (const part of parts) {
-      if (part.inlineData?.data) {
-        return {
-          success: true,
-          imageBase64: part.inlineData.data,
-          mimeType: part.inlineData.mimeType ?? "image/png",
-          provider: "gemini",
-        };
-      }
+    if (!base64Image) {
+      return { success: false, error: "No image was returned by Ollama." };
     }
 
-    return { success: false, error: "No image was returned by Gemini." };
+    if (base64Image.startsWith("data:")) {
+      base64Image = base64Image.split(",")[1] ?? base64Image;
+    }
+
+    return {
+      success: true,
+      imageBase64: base64Image,
+      mimeType: "image/png",
+      provider: "ollama",
+    };
   } catch (error) {
     return {
       success: false,

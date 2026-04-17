@@ -26,9 +26,6 @@ app.use(express.json());
 if (!ENV.TAVILY_API_KEY) {
   log.warn("TAVILY_API_KEY is not configured; web_search will fail until it is set.");
 }
-if (ENV.AI_PROVIDER === "gemini" && !ENV.GEMINI_API_KEY) {
-  log.warn("GEMINI_API_KEY is not configured; generate_image will fail until it is set.");
-}
 
 app.use((req, res, next) => {
   const startedAt = Date.now();
