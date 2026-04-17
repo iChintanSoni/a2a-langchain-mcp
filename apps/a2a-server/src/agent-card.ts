@@ -20,6 +20,8 @@ export function createAgentCard(baseUrl: string): AgentCard {
     version: "1.0.0",
     preferredTransport: "JSONRPC",
     url: jsonRpcUrl,
+    // Explicit declaration required by the A2A spec; empty schemes means no auth.
+    authentication: { schemes: [] },
     skills: [
       {
         id: "chat",
@@ -50,10 +52,8 @@ export function createAgentCard(baseUrl: string): AgentCard {
     },
     defaultInputModes: ["text/plain", "image/*"],
     defaultOutputModes: ["text/plain", "image/png"],
-    additionalInterfaces: [
-      { url: jsonRpcUrl, transport: "JSONRPC" },
-      { url: restUrl, transport: "HTTP+JSON" },
-    ],
+    // Only list interfaces beyond the primary `url` above (no duplicate JSON-RPC)
+    additionalInterfaces: [{ url: restUrl, transport: "HTTP+JSON" }],
   };
 }
 

@@ -24,6 +24,9 @@ log.event("Booting A2A server");
 const mcpClient = getMCPClient();
 log.success("MCP client prepared");
 
+// TODO: Replace InMemoryTaskStore with a Redis-backed implementation so task
+// state survives server restarts. Redis is already available (used by the
+// LangGraph checkpointer) and the A2A SDK accepts any TaskStore implementation.
 const requestHandler = new DefaultRequestHandler(
   agentCard,
   new InMemoryTaskStore(),

@@ -12,6 +12,7 @@
  */
 
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import cors from "cors";
 import express, { type Request, type Response } from "express";
 import { randomUUID } from "node:crypto";
 import { ENV } from "#src/env.ts";
@@ -21,6 +22,7 @@ import { createLogger } from "common";
 const log = createLogger("mcp/http");
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 if (!ENV.TAVILY_API_KEY) {
