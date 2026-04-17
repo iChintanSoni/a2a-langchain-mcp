@@ -17,6 +17,7 @@ CLUSTER_NAME   := a2a-cluster
 KIND_CONFIG    := k8s/kind-config.yaml
 NAMESPACE      := a2a-system
 IMAGES := mcp-server a2a-server
+DOCLING_IMAGE := quay.io/docling-project/docling-serve-cpu:latest
 # Podman is used as the container engine; tell kind to use it.
 export KIND_EXPERIMENTAL_PROVIDER := podman
 
@@ -28,10 +29,11 @@ export KIND_EXPERIMENTAL_PROVIDER := podman
 all: build cluster-create load deploy
 	@echo ""
 	@echo "✅  Deployment complete. Access points:"
-	@echo "    A2A Server → http://localhost:4000"
-	@echo "    A2A gRPC   → localhost:4001"
-	@echo "    MCP Server → http://localhost:5050"
-	@echo "    Ollama     → http://localhost:11434  (host machine)"
+	@echo "    A2A Server    → http://localhost:4000"
+	@echo "    A2A gRPC      → localhost:4001"
+	@echo "    MCP Server    → http://localhost:5050"
+	@echo "    Docling Serve → http://localhost:30004"
+	@echo "    Ollama        → http://localhost:11434  (host machine)"
 
 ## build: Build all container images with Podman
 build:
@@ -39,6 +41,8 @@ build:
 	podman build -t mcp-server:latest apps/mcp-server
 	@echo "── Building a2a-server ──────────────────────────────────────────────────────"
 	podman build -t a2a-server:latest apps/a2a-server
+	@echo "── Pulling External Images ──────────────────────────────────────────────────"
+	podman pull $(DOCLING_IMAGE)
 
 ## cluster-create: Create the kind cluster (idempotent – skips if already exists)
 cluster-create:
@@ -57,18 +61,22 @@ load:
 		podman save $$img:latest | kind load image-archive /dev/stdin \
 			--name $(CLUSTER_NAME); \
 	done
+	@echo "  Loading Docling (this may take a few minutes)..."
+	@podman save $(DOCLING_IMAGE) | kind load image-archive /dev/stdin --name $(CLUSTER_NAME)
 
 ## deploy: Apply all Kubernetes manifests
 deploy:
 	@echo "── Applying Kubernetes manifests ────────────────────────────────────────────"
 	kubectl apply -f k8s/namespace.yaml
 	kubectl apply -f k8s/redis/
+	kubectl apply -f k8s/docling-serve/
 	kubectl apply -f k8s/mcp-server/
 	kubectl apply -f k8s/a2a-server/
 	@echo "── Waiting for rollout ───────────────────────────────────────────────────────"
-	kubectl rollout status deployment/redis      -n $(NAMESPACE) --timeout=60s
-	kubectl rollout status deployment/mcp-server -n $(NAMESPACE) --timeout=120s
-	kubectl rollout status deployment/a2a-server -n $(NAMESPACE) --timeout=120s
+	kubectl rollout status deployment/redis         -n $(NAMESPACE) --timeout=60s
+	kubectl rollout status deployment/docling-serve -n $(NAMESPACE) --timeout=600s
+	kubectl rollout status deployment/mcp-server   -n $(NAMESPACE) --timeout=300s
+	kubectl rollout status deployment/a2a-server   -n $(NAMESPACE) --timeout=300s
 
 ## delete: Tear down all deployed resources (keeps the cluster)
 delete:
@@ -81,6 +89,10 @@ clean:
 	kind delete cluster --name $(CLUSTER_NAME)
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
+
+## logs-docling: Tail docling-serve logs
+logs-docling:
+	kubectl logs -f deployment/docling-serve -n $(NAMESPACE)
 
 ## logs-mcp: Tail mcp-server logs
 logs-mcp:

@@ -15,7 +15,8 @@ spec:
     spec:
       containers:
         - name: docling-serve
-          image: quay.io/docling-project/docling-serve
+          image: quay.io/docling-project/docling-serve-cpu:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5001
           envFrom:
