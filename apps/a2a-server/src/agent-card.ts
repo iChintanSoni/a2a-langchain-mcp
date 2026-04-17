@@ -60,7 +60,7 @@ export const agentCard: AgentCard = {
       transport: "HTTP+JSON",
     },
     {
-      url: `${ENV.CARD_HOST}:${ENV.GRPC_PORT}`,
+      url: `grpc://${ENV.CARD_HOST}:${ENV.GRPC_PORT}`,
       transport: "GRPC",
     },
   ],
