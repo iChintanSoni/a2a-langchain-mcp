@@ -6,7 +6,7 @@ This repository bridges Langchain's powerful graph-based agent architecture with
 
 There are two primary applications inside this monorepo:
 1. **`a2a-server`**: Connects to the A2A Protocol via REST and gRPC, and coordinates the Langgraph `AgentExecutor` to fulfill tasks. 
-2. **`mcp-server`**: Operates the external suite of runtime tools (`web_search`, `read_url`, `get_datetime`) and instructional context that the Langchain agent calls upon via MCP paradigms.
+2. **`mcp-server`**: Operates the external suite of runtime tools (`web_search`, `read_url`, `get_datetime`, `generate_image`) and instructional context that the Langchain agent calls upon via MCP paradigms.
 
 ---
 

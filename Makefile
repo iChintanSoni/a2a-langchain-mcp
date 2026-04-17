@@ -7,6 +7,8 @@
 #   podman machine init && podman machine start   # macOS only
 #   ollama serve                                  # Ollama runs on the host
 #   ollama pull qwen3:4b
+#   ollama pull x/flux2-klein:4b
+#   export TAVILY_API_KEY=...                     # For mcp-server web search
 #
 # Quick start:
 #   make all
@@ -18,10 +20,13 @@ KIND_CONFIG    := k8s/kind-config.yaml
 NAMESPACE      := a2a-system
 IMAGES := mcp-server a2a-server
 DOCLING_IMAGE := quay.io/docling-project/docling-serve-cpu:latest
+MCP_ENV_FILE := apps/mcp-server/.env
 # Podman is used as the container engine; tell kind to use it.
 export KIND_EXPERIMENTAL_PROVIDER := podman
 
-.PHONY: all build cluster-create load deploy wait delete clean help logs-mcp logs-a2a logs-ui status machine-reset machine-status
+-include $(MCP_ENV_FILE)
+
+.PHONY: all build cluster-create load deploy secret-mcp wait delete clean help logs-mcp logs-a2a logs-ui status machine-reset machine-status
 
 # ── Top-level targets ─────────────────────────────────────────────────────────
 
@@ -70,6 +75,7 @@ deploy:
 	kubectl apply -f k8s/namespace.yaml
 	kubectl apply -f k8s/redis/
 	kubectl apply -f k8s/docling-serve/
+	@$(MAKE) secret-mcp
 	kubectl apply -f k8s/mcp-server/
 	kubectl apply -f k8s/a2a-server/
 	@echo "── Waiting for rollout ───────────────────────────────────────────────────────"
@@ -77,6 +83,15 @@ deploy:
 	kubectl rollout status deployment/docling-serve -n $(NAMESPACE) --timeout=600s
 	kubectl rollout status deployment/mcp-server   -n $(NAMESPACE) --timeout=300s
 	kubectl rollout status deployment/a2a-server   -n $(NAMESPACE) --timeout=300s
+
+## secret-mcp: Create or update the Tavily API key secret for mcp-server
+secret-mcp:
+	@test -n "$(strip $(TAVILY_API_KEY))" || (echo "$(MCP_ENV_FILE) must define TAVILY_API_KEY."; exit 1)
+	@echo "── Applying mcp-server secret ───────────────────────────────────────────────"
+	@kubectl create secret generic mcp-server-secret \
+		--namespace $(NAMESPACE) \
+		--from-literal=TAVILY_API_KEY="$(TAVILY_API_KEY)" \
+		--dry-run=client -o yaml | kubectl apply -f -
 
 ## delete: Tear down all deployed resources (keeps the cluster)
 delete:

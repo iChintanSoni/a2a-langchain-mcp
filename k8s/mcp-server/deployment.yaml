@@ -23,6 +23,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: mcp-server-config
+            - secretRef:
+                name: mcp-server-secret
+                optional: true
           resources:
             requests:
               memory: "128Mi"
