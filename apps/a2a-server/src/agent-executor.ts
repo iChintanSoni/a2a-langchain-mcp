@@ -404,6 +404,7 @@ class ChatAgentExecutor implements AgentExecutor {
     } catch (error) {
       if (this.activeCancelledTasks.has(taskId) || isAbortError(error)) {
         log.warn("Task canceled", { taskId, contextId });
+        // cancelTask() already published the canceled status and called eventBus.finished()
         return;
       }
 
@@ -429,14 +430,14 @@ class ChatAgentExecutor implements AgentExecutor {
         },
       });
       log.error("Task failed", error);
-      throw error;
     } finally {
+      // Capture before deleting — cancelTask() already called eventBus.finished()
+      const wasCanceled = this.activeCancelledTasks.has(taskId);
       this.activeAbortControllers.delete(taskId);
       this.activeContextIds.delete(taskId);
       this.activeCancelledTasks.delete(taskId);
+      if (!wasCanceled) eventBus.finished();
     }
-
-    eventBus.finished();
   }
 
   private async streamAgentResponse(

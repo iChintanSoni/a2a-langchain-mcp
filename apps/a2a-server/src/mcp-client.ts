@@ -30,6 +30,11 @@ async function getRawClient(): Promise<Client> {
   log.event("Connecting raw MCP client", { url: MCP_URL });
   const client = new Client({ name: "a2a-server", version: "1.0.0" });
   const transport = new StreamableHTTPClientTransport(new URL(MCP_URL));
+  // Clear the singleton on close so the next call reconnects automatically
+  transport.onclose = () => {
+    log.warn("Raw MCP client connection closed; will reconnect on next use");
+    _rawClient = null;
+  };
   await client.connect(transport);
   _rawClient = client;
   log.success("Raw MCP client connected", { url: MCP_URL });
