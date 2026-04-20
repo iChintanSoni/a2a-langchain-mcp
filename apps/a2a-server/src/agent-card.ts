@@ -20,8 +20,6 @@ export function createAgentCard(baseUrl: string): AgentCard {
     version: "1.0.0",
     preferredTransport: "JSONRPC",
     url: jsonRpcUrl,
-    // Explicit declaration required by the A2A spec; empty schemes means no auth.
-    authentication: { schemes: [] },
     skills: [
       {
         id: "chat",
