@@ -24,7 +24,8 @@
   "workspaces": [
     "packages/common",
     "apps/a2a-server",
-    "apps/mcp-server"
+    "apps/mcp-server",
+    "apps/file-server"
   ],
   "devDependencies": {
     "prettier": "^3.8.1"
